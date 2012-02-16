@@ -33,12 +33,11 @@ User                    ##USR##
 Group                   users
 ServerAdmin             webmaster@127.0.0.1
 ServerRoot              ##ROOT##
-DocumentRoot            ##ROOT##/../test/htdocs/demo
+DocumentRoot            ##ROOT##/htdocs/
 ServerSignature         off
 HostnameLookups         off
 UseCanonicalName        on
-LockFile                ##ROOT##/logs
-/accept.lock
+LockFile                ##ROOT##/logs/accept.lock
 Timeout                 30
 KeepAlive               on
 MaxKeepAliveRequests    100
@@ -61,14 +60,14 @@ CoreDumpDirectory       ##ROOT##/logs/
 
 TypesConfig             ../test/conf/mime.types
 LoadModule              status_module ##ROOT##/../httpd/modules/generators/.libs/mod_status.so
-LoadModule              unique_id_module ##ROOT##/../httpd/modules/metadata/.libs/mod_unique_id.so
+#LoadModule              unique_id_module ##ROOT##/../httpd/modules/metadata/.libs/mod_unique_id.so
 LoadModule              proxy_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy.so
 LoadModule              proxy_http_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy_http.so
 LoadModule              csrf_module ##ROOT##/../httpd/modules/csrf/.libs/mod_csrf.so
-LoadModule              parp_module ##ROOT##/../test/libexec/mod_parp.so
+#LoadModule              parp_module ##ROOT##/../test/libexec/mod_parp.so
 
 Listen                  127.0.0.1:##PORT_BASE##
-<VirtualHost 127.0.0.1server1:##PORT_BASE##>
+<VirtualHost 127.0.0.1:##PORT_BASE##>
    ServerName             127.0.0.1
 
    TransferLog            ##ROOT##/logs/access_log
