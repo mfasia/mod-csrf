@@ -1,7 +1,8 @@
 #!/bin/sh
 # -*-mode: ksh; ksh-indent: 2; -*-
 #
-# mod_csrf - Cross-site request forgery protection module of the Apache web server
+# mod_csrf - Cross-site request forgery protection module for
+#            the Apache web server
 #
 # Copyright (C) 2012 Christoph Steigmeier, Pascal Buchbinder
 # 
