@@ -2,12 +2,40 @@
 <html>
   <head>
     <title>start page</title>
-    <script language="JavaScript" src="/csrf.js" type="text/javascript" />
+    <script language="JavaScript" src="/csrf.js" type="text/javascript"></script>
+  </head>
   <body>
     <h1>start page</h1>
 
+    <p>
+      <a href="/index.html?id=1234">this page</a>
+    </p>
 
+    <p>
+      <a href="/index2.html?id=1234">other page</a>
+    </p>
+
+    <p>
+      <img src="/image.gif?id=1234" />
+    </p>
+
+    <p>
+    <form action="/index.html" method="POST">
+      <input type="submit" name="submit" value="post"/>
+    </form>
+    </p>
+
+    <p>
+    <form action="/index.html" method="GET">
+      <input type="submit" name="submit" value="get"/>
+    </form>
+    </p>
 
     <hr>
+<script type="text/javascript">
+<!--
+csrfInsert("csrfid=Tz6Ovn8AAQEAAE1AANUAAAAC");
+//-->
+</script>
   </body>
 </html>
