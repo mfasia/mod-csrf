@@ -60,7 +60,7 @@ CoreDumpDirectory       ##ROOT##/logs/
 
 TypesConfig             ../test/conf/mime.types
 LoadModule              status_module ##ROOT##/../httpd/modules/generators/.libs/mod_status.so
-#LoadModule              unique_id_module ##ROOT##/../httpd/modules/metadata/.libs/mod_unique_id.so
+LoadModule              unique_id_module ##ROOT##/../httpd/modules/metadata/.libs/mod_unique_id.so
 LoadModule              proxy_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy.so
 LoadModule              proxy_http_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy_http.so
 LoadModule              csrf_module ##ROOT##/../httpd/modules/csrf/.libs/mod_csrf.so
