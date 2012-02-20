@@ -1,3 +1,4 @@
+//
 // mod_csrf - Cross-site request forgery protection module for
 //            the Apache web server
 //
@@ -16,36 +17,83 @@
 // You should have received a copy of the GNU Lesser General Public
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+//
+
+//var types = [
+//	     ["a",          "href" ],
+//	     ["area",       "href" ],
+//	     ["applet",     "codebase" ],
+//	     ["base",       "href" ],
+//	     ["blockquote", "cite" ],
+//	     ["body",       "background", "style" ],
+//	     ["del",        "cite" ],
+//	     ["form",       "action" ],
+//	     ["frame",      "src", "longdesc" ],
+//	     ["head",       "profile" ],
+//	     ["iframe",     "src", "longdesc" ],
+//	     ["img",        "src", "longdesc", "usemap" ],
+//	     ["input",      "src", "usemap" ],
+//	     ["ins",        "cite" ],
+//	     ["link",       "href" ],
+//	     ["meta",       "content" ],
+//	     ["object",     "classid", "codebase", "data", "usemap" ],
+//	     ["p",          "style" ],
+//	     ["q",          "cite" ],
+//	     ["script",     "src", "for" ],
+//	     ["table",      "style" ],
+//	     ["td",         "style" ],
+//	     ["tr",         "style" ],
+//	     ];
 
 var types = [
-	     ["a",          "href" ],
-	     ["area",       "href" ],
-	     ["applet",     "codebase" ],
-	     ["base",       "href" ],
-	     ["blockquote", "cite" ],
-	     ["body",       "background", "style" ],
-	     ["del",        "cite" ],
-	     ["form",       "action" ],
-	     ["frame",      "src", "longdesc" ],
-	     ["head",       "profile" ],
-	     ["iframe",     "src", "longdesc" ],
-	     ["img",        "src", "longdesc", "usemap" ],
-	     ["input",      "src", "usemap" ],
-	     ["ins",        "cite" ],
-	     ["link",       "href" ],
-	     ["meta",       "content" ],
-	     ["object",     "classid", "codebase", "data", "usemap" ],
-	     ["p",          "style" ],
-	     ["q",          "cite" ],
-	     ["script",     "src", "for" ],
-	     ["table",      "style" ],
-	     ["td",         "style" ],
-	     ["tr",         "style" ],
+	     ["a",          "href" ]
 	     ];
 
+// adds the csrfId to all known refernce nodes
+function addToNodes(paramName, csrfId) {
+  // iterate through all known types, e.g. "a"
+  for(i = 0; i < types.length; i++) {
+    var j;
+    var name = types[i][0];
+    // fetch all nodes from the document
+    var nodes = document.getElementsByTagName(name);
+    if(nodes != null) {
+      for(j = 0; j < nodes.length; j++) {
+	// process all attributes for these nodes, e.g. "href" for nodes of type "a"
+	var ai = 1;
+	while(types[i][ai] != null) {
+	  var attribute = nodes[j].getAttribute(types[i][ai]);
+	  if(attribute != null) {
+	    if(attribute.indexOf("?") == -1) {
+	      var newattribute = attribute + "?" + paramName + "=" + csrfId;
+	      nodes[j].setAttribute(types[i][ai], newattribute);
+	    } else {
+	      var newattribute = attribute + "&" + paramName + "=" + csrfId;
+	      nodes[j].setAttribute(types[i][ai], newattribute);
+	    }
+	  }
+	  ai++;
+	}
+      }
+    }
+  }
+}
 
-function csrfInsert(csrfId) {
-  document.write("query to add: " + csrfId + "<br/>");
+// adds the csrfId as a hidden field to every form
+function addToForms(paramName, csrfId) {
+  var nodes = document.getElementsByTagName('form');
+  for(var i = 0; i < nodes.length; i++) {
+    var link = document.createElement('input');
+    link.setAttribute('type', 'hidden');
+    link.setAttribute('name', paramName);
+    link.setAttribute('value', csrfId);
+    nodes[i].appendChild(link);
+  }
+}
+
+function csrfInsert(paramName, csrfId) {
+  var i;
+  document.write("id to add: " + csrfId + "<br/>");
 
   var links = document.links;
   document.write("number of links: " + links.length + "<br/>");
@@ -53,10 +101,9 @@ function csrfInsert(csrfId) {
   var forms = document.getElementsByTagName("form");
   document.write("number of forms: " + forms.length + "<br/>");
 
-  var i;
-  for(i = 0; i < types.length; i++) {
-    var name = types[i][0];
-    var nodes = document.getElementsByTagName(name);
-    document.write("number of '" + name + "' nodes: " + nodes.length + "<br/>");
-  }
+  // simple references
+  addToNodes(paramName, csrfId);
+
+  // forms
+  addToForms(paramName, csrfId);
 }
