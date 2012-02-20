@@ -64,7 +64,7 @@ LoadModule              unique_id_module ##ROOT##/../httpd/modules/metadata/.lib
 LoadModule              proxy_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy.so
 LoadModule              proxy_http_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy_http.so
 LoadModule              csrf_module ##ROOT##/../httpd/modules/csrf/.libs/mod_csrf.so
-#LoadModule              parp_module ##ROOT##/../test/libexec/mod_parp.so
+LoadModule              parp_module ##ROOT##/../test/libexec/mod_parp.so
 
 Listen                  127.0.0.1:##PORT_BASE##
 <VirtualHost 127.0.0.1:##PORT_BASE##>
