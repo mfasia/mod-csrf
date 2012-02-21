@@ -60,6 +60,7 @@ static const char g_revision[] = "0.0";
 #define CSRF_IGNORE_CACHE "mod_csrf::ignore"
 
 #define CSRF_QUERYID "csrfpId"
+#define CSRF_WIN 32
 
 /************************************************************************
  * structures
@@ -77,6 +78,19 @@ typedef struct {
   int enabled;                /** enabled by default (-1) or by user (1) */
 } csrf_dir_config_t;
 
+typedef enum  {
+  CSRF_RES_NEW = 0,
+  CSRF_RES_SEARCH_HEAD,
+  CSRF_RES_SEARCH_BODY,
+  CSRF_RES_SEARCH_END
+} csrf_conn_state_e;
+
+typedef struct {
+  csrf_conn_state_e state;
+  char *search;
+  char body_window[2*CSRF_WIN+1];
+} csrf_req_ctx;
+
 /************************************************************************
  * globals
  ***********************************************************************/
@@ -89,6 +103,46 @@ static APR_OPTIONAL_FN_TYPE(parp_hp_table) *csrf_parp_hp_table_fn = NULL;
 /************************************************************************
  * private
  ***********************************************************************/
+
+/*
+ * Similar to standard ap_strcasestr()
+ */
+const char *csrf_strncasestr(const char *s1, const char *s2, int len) {
+  const char *e1 = &s1[len-1];
+  char *p1, *p2;
+  if (*s2 == '\0') {
+    /* an empty s2 */
+    return((char *)s1);
+  }
+  while(1) {
+    for ( ; (*s1 != '\0') && (s1 <= e1) && (apr_tolower(*s1) != apr_tolower(*s2)); s1++);
+    if ((s1 > e1) || (*s1 == '\0')) {
+      return(NULL);
+    }
+    /* found first character of s2, see if the rest matches */
+    p1 = (char *)s1;
+    p2 = (char *)s2;
+    for (++p1, ++p2; (p1 <= e1) && (apr_tolower(*p1) == apr_tolower(*p2)); ++p1, ++p2) {
+      if (*p1 == '\0') {
+        /* both strings ended together */
+        return((char *)s1);
+      }
+    }
+    if(p1 > e1) {
+      return NULL;
+    }
+    if (*p2 == '\0') {
+      /* second string ended, a match */
+            break;
+    }
+    /* didn't find a match here, try starting at next character in s1 */
+    s1++;
+    if(s1 > e1) {
+      return NULL;
+    }
+  }
+  return((char *)s1);
+}
 
 /**
  * Checks if csrf has been enabled.
@@ -123,12 +177,17 @@ static int csrf_ignore_req(request_rec *r) {
     // cache: check regex only once
     return 1;
   }
-  if(r->parsed_uri.path &&
-     ap_regexec(sconf->ignore_pattern, r->parsed_uri.path, 0, NULL, 0) == 0) {
-    apr_table_set(r->notes, CSRF_IGNORE_CACHE, "i");
-    ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
-                  CSRF_LOGD_PFX"ignores request '%s'", r->parsed_uri.path);
-    return 1;
+  if(r->parsed_uri.path) {
+    const char *path = strrchr(r->parsed_uri.path, '/'); // faster than match against a long string
+    if(path == NULL) {
+      path = r->parsed_uri.path;
+    }
+    if(ap_regexec(sconf->ignore_pattern, path, 0, NULL, 0) == 0) {
+      apr_table_set(r->notes, CSRF_IGNORE_CACHE, "i");
+      ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
+                    CSRF_LOGD_PFX"ignores request '%s'", r->parsed_uri.path);
+      return 1;
+    }
   }
   return 0;
 }
@@ -175,9 +234,127 @@ static int csrf_validate_req_id(request_rec *r, apr_table_t *tl, char **msg) {
   return 0;
 }
 
+static const char *csrf_get_contenttype(request_rec *r) {
+  const char* type = NULL;
+  type = apr_table_get(r->headers_out, "Content-Type");
+  if(type == NULL) {
+    type = apr_table_get(r->err_headers_out, "Content-Type"); // maybe an error page
+  }
+  if(type == NULL) {
+    type = r->content_type;
+  }
+  return type;
+}
+
 /************************************************************************
  * handlers
  ***********************************************************************/
+
+static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb) {
+  request_rec *r = f->r;
+  csrf_req_ctx *rctx = ap_get_module_config(r->request_config, &csrf_module);
+  if(rctx == NULL) {
+    rctx = apr_pcalloc(r->pool, sizeof(csrf_req_ctx));
+    rctx->state = CSRF_RES_NEW;
+    rctx->search = NULL;
+    rctx->body_window[0] = '\0';
+    ap_set_module_config(r->request_config, &csrf_module, rctx);
+  }
+  /*
+   * states:
+   * - new (determine if it's html and force chunked response)
+   * - search </head> to insert link to our js
+   * - search </body> to insert script method/id
+   * - end (all done)
+   */
+  if(rctx->state == CSRF_RES_NEW) {
+    const char *type = csrf_get_contenttype(r);
+    if(type == NULL || strncasecmp(type, "text/html", 9) != 0) {
+      // we don't want to parse this response (no html)
+      rctx->state = CSRF_RES_SEARCH_END;
+      rctx->search = NULL;
+      ap_remove_output_filter(f);
+    } else {
+      // start searching head/body to inject our script
+      apr_table_unset(r->headers_out, "Content-Length"); // chunked
+      apr_table_unset(r->err_headers_out, "Content-Length");
+      //      apr_table_add(r->err_headers_out, "Cache-Control", "no-cache");
+      rctx->state = CSRF_RES_SEARCH_HEAD;
+      rctx->search = apr_pstrdup(r->pool, "</head>");
+    }
+  }
+  //rctx->search = apr_pstrdup(r->pool, "</body>");
+  if(rctx->search) {
+    apr_bucket *b;
+    for(b = APR_BRIGADE_FIRST(bb); b != APR_BRIGADE_SENTINEL(bb); b = APR_BUCKET_NEXT(b)) {
+      if(APR_BUCKET_IS_EOS(b)) {
+        /* If we ever see an EOS, make sure to FLUSH. */
+        apr_bucket *flush = apr_bucket_flush_create(f->c->bucket_alloc);
+        APR_BUCKET_INSERT_BEFORE(b, flush);
+      }
+      if(!(APR_BUCKET_IS_METADATA(b))) {
+        const char *buf = NULL;
+        apr_size_t  nbytes = 0;
+        if(apr_bucket_read(b, &buf, &nbytes, APR_BLOCK_READ) == APR_SUCCESS) {
+          if(nbytes > 0) {
+            const char *marker = NULL;
+
+            /* 1. overlap with existing buffer*/
+            /* TODO we need to keep back this data
+            int blen = nbytes > CSRF_WIN ? CSRF_WIN : nbytes-1;
+            int wlen = strlen(rctx->body_window);
+            strncpy(&rctx->body_window[wlen], buf, blen);
+            rctx->body_window[wlen+blen] = '\0';
+            if(strstr(rctx->body_window, rctx->search)) {
+              // found pattern
+            }
+            rctx->body_window[0] = '\0';
+            */
+            
+            /* 2. new buffer */
+            marker = csrf_strncasestr(buf, rctx->search, nbytes);
+            if(marker) {
+              /* found pattern */
+              if(rctx->state == CSRF_RES_SEARCH_HEAD) {
+                char *content = apr_pstrdup(r->pool, "<script language=\"JavaScript\" src=\"/csrf.js\" type=\"text/javascript\"></script>\n");
+                apr_bucket *e;
+                apr_size_t sz = marker - buf;
+                apr_bucket_split(b, sz);
+                e = apr_bucket_pool_create(content, strlen(content), r->pool,
+                                           r->connection->bucket_alloc);
+                b = APR_BUCKET_NEXT(b);
+                APR_BUCKET_INSERT_BEFORE(b, e);
+                b = e;
+                rctx->state = CSRF_RES_SEARCH_BODY;
+                rctx->search = apr_pstrdup(r->pool, "</body>");
+              } else if(rctx->state == CSRF_RES_SEARCH_BODY) {
+                char *content = apr_pstrdup(r->pool, "<script type=\"text/javascript\">\n<!--\ncsrfInsert(\"csrfpId\", \"Tz6Ovn8AAQEAAE1AANUAAAAC\");\n//-->\n</script>\n");
+                apr_bucket *e;
+                apr_size_t sz = marker - buf;
+                apr_bucket_split(b, sz);
+                e = apr_bucket_pool_create(content, strlen(content), r->pool,
+                                           r->connection->bucket_alloc);
+                b = APR_BUCKET_NEXT(b);
+                APR_BUCKET_INSERT_BEFORE(b, e);
+                b = e;
+                rctx->state = CSRF_RES_SEARCH_END;
+                rctx->search = NULL;
+                break;
+              }
+            }
+
+            /* 3. store the end (for next loop) */
+            /*
+            strncpy(rctx->body_window, &buf[nbytes-1 - blen], blen);
+            rctx->body_window[blen] = '\0';
+            */
+          }
+        }
+      }
+    }
+  }
+  return ap_pass_brigade(f->next, bb);
+}
 
 /**
  * Request verification.
@@ -186,8 +363,9 @@ static int csrf_validate_req_id(request_rec *r, apr_table_t *tl, char **msg) {
  * @return
  */
 static int csrf_fixup(request_rec * r) {
-  if(ap_is_initial_req(r)) {
-    if(csrf_enabled(r) && !csrf_ignore_req(r)) {
+  if(ap_is_initial_req(r) && csrf_enabled(r)) {
+    ap_add_output_filter("csrf_out_filter_body", NULL, r, r->connection);
+    if(!csrf_ignore_req(r)) {
       apr_table_t *tl = NULL;
       char *msg = NULL;
       if(csrf_parp_hp_table_fn) {
@@ -206,7 +384,6 @@ static int csrf_fixup(request_rec * r) {
       if(!csrf_validate_req_id(r, tl, &msg)) {
         ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r,
                       CSRF_LOG_PFX(000)"request denied, %s", msg ? msg : "");
-        // TODO log
         return HTTP_FORBIDDEN;
       }
     }
@@ -323,6 +500,7 @@ static void csrf_register_hooks(apr_pool_t * p) {
   ap_hook_header_parser(csrf_header_parser, NULL, parp, APR_HOOK_FIRST);
   ap_hook_fixups(csrf_fixup, pre, NULL, APR_HOOK_MIDDLE);
   ap_hook_post_config(csrf_post_config, pre, NULL, APR_HOOK_MIDDLE);
+  ap_register_output_filter("csrf_out_filter_body", csrf_out_filter_body, NULL, AP_FTYPE_RESOURCE);
 }
 
 /************************************************************************
