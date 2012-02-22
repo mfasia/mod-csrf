@@ -77,4 +77,13 @@ Listen                  127.0.0.1:##PORT_BASE##
    </Location>
 
 
+   ProxyRequests              Off
+   <Proxy *>
+      Order deny,allow
+      Allow from all
+   </Proxy>
+
+   ProxyPass                  /htt http://localhost:##PORT_BASE1##/htt retry=0
+   ProxyPassReverse           /htt http://localhost:##PORT_BASE1##/htt
+
 </VirtualHost>

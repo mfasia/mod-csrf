@@ -8,6 +8,7 @@ CUID=`expr "$CUID" : 'uid=\([0-9]*\)'`
 CUID=`expr $CUID '*' 10`
 CUID=`expr $CUID '%' 100`
 PORT_BASE=`expr ${CUID} + 5400`
+PORT_BASE1=`expr ${PORT_BASE} + 1`
 
 mkdir -p logs
 
@@ -16,8 +17,10 @@ for E in $FILES; do
   sed <${E}.tmpl >${E} \
     -e "s;##ROOT##;$ROOT;g" \
     -e "s;##USR##;$CUID_STR;g" \
-    -e "s;##PORT_BASE##;$PORT_BASE;g"
+    -e "s;##PORT_BASE##;$PORT_BASE;g" \
+    -e "s;##PORT_BASE1##;$PORT_BASE1;g"
 
 done
 
-echo "SET PORT_BASE=$PORT_BASE"   >  scripts/ports
+echo "SET PORT_BASE=$PORT_BASE"    >  scripts/ports
+echo "SET PORT_BASE1=$PORT_BASE1" >>  scripts/ports

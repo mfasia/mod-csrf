@@ -215,6 +215,16 @@ static apr_table_t *csrf_get_query(request_rec *r) {
   return qt;
 }
 
+static char *csrf_create_id(request_rec *r) {
+  // FIXME: implement generation
+  return apr_pstrdup(r->pool, "0000");
+}
+
+static int csrf_validate_id(request_rec *r, const char *id) {
+  // FIXME: implement verification
+  return 1;
+}
+
 /**
  * Verifies that a valid csrf request id could be found
  *
@@ -227,8 +237,7 @@ static int csrf_validate_req_id(request_rec *r, apr_table_t *tl, char **msg) {
   csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
   const char *csrfid = apr_table_get(tl, sconf->id);
   if(csrfid != NULL) {
-    // FIXME: implement verification
-    return 1;
+    return csrf_validate_id(r, csrfid);
   }
   *msg = apr_psprintf(r->pool, "no '%s' parameter in request", sconf->id);
   return 0;
@@ -246,6 +255,62 @@ static const char *csrf_get_contenttype(request_rec *r) {
   return type;
 }
 
+/**
+ * Injects a new bucket containing a reference to the java script.
+ *
+ * @param r
+ * @param b Bucket split and insert date new bucket at the postion of the marker
+ * @param rctx Request context containing the state of the parser
+ * @param buf String representation of the bucket
+ * @param marker Pointer within buf where we have to inject the data
+ * @return Buffer to continue searching (at the marker)
+ */
+static apr_bucket *csrf_inject_head(request_rec *r, apr_bucket *b, csrf_req_ctx *rctx,
+                                    const char *buf, const char *marker) {
+  char *content = apr_pstrdup(r->pool, "<script language=\"JavaScript\""
+                              " src=\"/csrf.js\" type=\"text/javascript\">"
+                              "</script>\n");
+  apr_bucket *e;
+  apr_size_t sz = marker - buf;
+  apr_bucket_split(b, sz);
+  //  fprintf(stderr, "$$$ FOUND [%.*s]\n", 6, &buf[sz]); fflush(stderr);
+  e = apr_bucket_pool_create(content, strlen(content), r->pool,
+                             r->connection->bucket_alloc);
+  b = APR_BUCKET_NEXT(b);
+  APR_BUCKET_INSERT_BEFORE(b, e);
+  rctx->state = CSRF_RES_SEARCH_BODY;
+  rctx->search = apr_pstrdup(r->pool, "</body>");
+  return e;
+}
+
+/**
+ * Injects a new bucket containing a java script method call incl. the id.
+ *
+ * @param r
+ * @param b Bucket split and insert date new bucket at the postion of the marker
+ * @param rctx Request context containing the state of the parser
+ * @param buf String representation of the bucket
+ * @param marker Pointer within buf where we have to inject the data
+ * @return Buffer to continue searching (at the marker)
+ */
+static apr_bucket *csrf_inject_body(request_rec *r, apr_bucket *b, csrf_req_ctx *rctx,
+                                    const char *buf, const char *marker) {
+  char *content = apr_psprintf(r->pool, "<script type=\"text/javascript\">\n"
+                               "<!--\ncsrfInsert(\""CSRF_QUERYID"\", \"%s\");\n"
+                               "//-->\n"
+                               "</script>\n", csrf_create_id(r));
+  apr_bucket *e;
+  apr_size_t sz = marker - buf;
+  apr_bucket_split(b, sz);
+  e = apr_bucket_pool_create(content, strlen(content), r->pool,
+                             r->connection->bucket_alloc);
+  b = APR_BUCKET_NEXT(b);
+  APR_BUCKET_INSERT_BEFORE(b, e);
+  rctx->state = CSRF_RES_SEARCH_END;
+  rctx->search = NULL;
+  return e;
+}
+
 /************************************************************************
  * handlers
  ***********************************************************************/
@@ -253,6 +318,7 @@ static const char *csrf_get_contenttype(request_rec *r) {
 static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb) {
   request_rec *r = f->r;
   csrf_req_ctx *rctx = ap_get_module_config(r->request_config, &csrf_module);
+  //  fprintf(stderr, "$$$ csrf_out_filter_body()\n"); fflush(stderr);
   if(rctx == NULL) {
     rctx = apr_pcalloc(r->pool, sizeof(csrf_req_ctx));
     rctx->state = CSRF_RES_NEW;
@@ -298,6 +364,7 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
         if(apr_bucket_read(b, &buf, &nbytes, APR_BLOCK_READ) == APR_SUCCESS) {
           if(nbytes > 0) {
             const char *marker = NULL;
+            // fprintf(stderr, "$$$ [%.*s] %d\n", nbytes > 20 ? 20 : nbytes, buf, nbytes); fflush(stderr);
 
             /* 1. overlap with existing buffer*/
             /* TODO we need to keep back this data
@@ -316,29 +383,9 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
             if(marker) {
               /* found pattern */
               if(rctx->state == CSRF_RES_SEARCH_HEAD) {
-                char *content = apr_pstrdup(r->pool, "<script language=\"JavaScript\" src=\"/csrf.js\" type=\"text/javascript\"></script>\n");
-                apr_bucket *e;
-                apr_size_t sz = marker - buf;
-                apr_bucket_split(b, sz);
-                e = apr_bucket_pool_create(content, strlen(content), r->pool,
-                                           r->connection->bucket_alloc);
-                b = APR_BUCKET_NEXT(b);
-                APR_BUCKET_INSERT_BEFORE(b, e);
-                b = e;
-                rctx->state = CSRF_RES_SEARCH_BODY;
-                rctx->search = apr_pstrdup(r->pool, "</body>");
+                b = csrf_inject_head(r, b, rctx, buf, marker);
               } else if(rctx->state == CSRF_RES_SEARCH_BODY) {
-                char *content = apr_pstrdup(r->pool, "<script type=\"text/javascript\">\n<!--\ncsrfInsert(\"csrfpId\", \"Tz6Ovn8AAQEAAE1AANUAAAAC\");\n//-->\n</script>\n");
-                apr_bucket *e;
-                apr_size_t sz = marker - buf;
-                apr_bucket_split(b, sz);
-                e = apr_bucket_pool_create(content, strlen(content), r->pool,
-                                           r->connection->bucket_alloc);
-                b = APR_BUCKET_NEXT(b);
-                APR_BUCKET_INSERT_BEFORE(b, e);
-                b = e;
-                rctx->state = CSRF_RES_SEARCH_END;
-                rctx->search = NULL;
+                b = csrf_inject_body(r, b, rctx, buf, marker);
                 break;
               }
             }
