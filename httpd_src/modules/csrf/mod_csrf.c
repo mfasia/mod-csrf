@@ -72,10 +72,12 @@ static const char g_revision[] = "0.0";
 #define CSRF_QUERYID "csrfpId"
 #define CSRF_WIN 8
 // FIXME
-#define CSRF_ENABLE_WINDOW 0
+#define CSRF_ENABLE_WINDOW 1
 /* div */
 #define CSRF_RAND_SIZE 10
 
+// env variable to read id from
+#define CSRF_ATTRIBUTE "CSRF_ATTRIBUTE"
 
 /************************************************************************
  * structures
@@ -126,43 +128,34 @@ static APR_OPTIONAL_FN_TYPE(parp_hp_table) *csrf_parp_hp_table_fn = NULL;
  ***********************************************************************/
 
 /*
- * Similar to standard ap_strcasestr()
+ * Similar to standard strstr() but case insensitive and lenght limitation
+ * (char which is not 0 terminated).
+ *
+ * @param s1 String to search in
+ * @param s2 Pattern to ind
+ * @param len Length of s1
+ * @return pointer to the beginning of the substring s2 within s1, or NULL
+ *         if the substring is not found
  */
-const char *csrf_strncasestr(const char *s1, const char *s2, int len) {
+static const char *csrf_strncasestr(const char *s1, const char *s2, int len) {
   const char *e1 = &s1[len-1];
-  char *p1, *p2;
-  if (*s2 == '\0') {
-    /* an empty s2 */
-    return((char *)s1);
-  }
-  while(1) {
-    for ( ; (*s1 != '\0') && (s1 <= e1) && (apr_tolower(*s1) != apr_tolower(*s2)); s1++);
-    if ((s1 > e1) || (*s1 == '\0')) {
-      return(NULL);
-    }
-    /* found first character of s2, see if the rest matches */
-    p1 = (char *)s1;
-    p2 = (char *)s2;
-    for (++p1, ++p2; (p1 <= e1) && (apr_tolower(*p1) == apr_tolower(*p2)); ++p1, ++p2) {
-      if (*p1 == '\0') {
-        /* both strings ended together */
-        return((char *)s1);
+  const char *p, *q;
+  for (; *s1 && (s1 <= e1); s1++) {
+    p = s1, q = s2;
+    while(*q && *p && (q <= e1)) {
+      if (apr_tolower(*q) != apr_tolower(*p)) {
+        break;
       }
+      p++, q++;
     }
-    if(p1 > e1) {
+    if(q > e1) {
       return NULL;
     }
-    if (*p2 == '\0') {
-      /* second string ended, a match */
-            break;
-    }
-    /* didn't find a match here, try starting at next character in s1 */
-    s1++;
-    if(s1 > e1) {
-      return NULL;
+    if(*q == 0) {
+      return (char *)s1;
     }
   }
-  return((char *)s1);
+  return 0;
 }
 
 /**
@@ -330,18 +323,13 @@ failed:
  * secret.
  */
 static char *csrf_create_id(request_rec *r) {
-  char *id;
-  char *enc_id;
-  char *bas64enc_id;
-  int len;
-  const char *csrf_att = apr_table_get(r->subprocess_env, "CSRF_ATTRIBUTE");
-  id = apr_pstrcat(r->pool, apr_psprintf(r->pool, "%"APR_TIME_T_FMT"", r->request_time),
-                   csrf_att != NULL ? apr_psprintf(r->pool, "#%s", csrf_att) : "" , NULL);
-  enc_id = (char *)apr_pcalloc(r->pool, strlen(id));
-  enc_id = csrf_enc64(r, apr_pstrcat(r->pool, id, NULL));
-  bas64enc_id = (char *)apr_pcalloc(r->pool, apr_base64_encode_len(strlen(enc_id)));
-  len = apr_base64_encode(bas64enc_id, enc_id, strlen(enc_id));
-  return bas64enc_id;
+  const char *csrf_att = apr_table_get(r->subprocess_env, CSRF_ATTRIBUTE);
+  char *id = apr_pstrcat(r->pool,
+                   apr_psprintf(r->pool, "%"APR_TIME_T_FMT"", r->request_time),
+                   "#",
+                   csrf_att,
+                   NULL);
+  return csrf_enc64(r, id);
 }
 
 static int csrf_validate_id(request_rec *r, const char *id) {
@@ -388,7 +376,7 @@ static const char *csrf_get_contenttype(request_rec *r) {
  * @param rctx Request context containing the state of the parser
  * @param buf String representation of the bucket
  * @param sz Position to split the bucket and insert the new content
- * @return Buffer to continue searching (at the marker)
+ * @return Bucket to continue searching (at the marker)
  */
 static apr_bucket *csrf_inject_head(request_rec *r, apr_bucket_brigade *bb, apr_bucket *b,
                                     csrf_req_ctx *rctx,
@@ -416,7 +404,7 @@ static apr_bucket *csrf_inject_head(request_rec *r, apr_bucket_brigade *bb, apr_
  * @param rctx Request context containing the state of the parser
  * @param buf String representation of the bucket
  * @param sz Position to split the bucket and insert the new content
- * @return Buffer to continue searching (at the marker)
+ * @return Bucket to continue searching (at the marker)
  */
 static apr_bucket *csrf_inject_body(request_rec *r, apr_bucket_brigade *bb, apr_bucket *b,
                                     csrf_req_ctx *rctx,
@@ -439,15 +427,13 @@ static apr_bucket *csrf_inject_body(request_rec *r, apr_bucket_brigade *bb, apr_
   return b;
 }
 
-/************************************************************************
- * handlers
- ***********************************************************************/
-
 /**
- * out filter to inject our java script to every html page
+ * Get or create (and init) the pre request context used by the response parser.
+ *
+ * @param r
+ * @return
  */
-static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb) {
-  request_rec *r = f->r;
+static csrf_req_ctx *csrf_get_rctx(request_rec *r) {
   csrf_req_ctx *rctx = ap_get_module_config(r->request_config, &csrf_module);
   if(rctx == NULL) {
     rctx = apr_pcalloc(r->pool, sizeof(csrf_req_ctx));
@@ -457,6 +443,19 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
     rctx->body_window[0] = '\0';
     ap_set_module_config(r->request_config, &csrf_module, rctx);
   }
+  return rctx;
+}
+
+/************************************************************************
+ * handlers
+ ***********************************************************************/
+
+/**
+ * Out filter to inject our java script to every html page
+ */
+static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb) {
+  request_rec *r = f->r;
+  csrf_req_ctx *rctx = csrf_get_rctx(r);
 
   /*
    * states:
@@ -501,7 +500,9 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
           if(nbytes > 0) {
             const char *marker = NULL;
 
-            /* 1. overlap with existing buffer */
+            /*
+             * 1. overlap with existing buffer
+             */
             if(CSRF_ENABLE_WINDOW && rctx->body_window[0]) {
               int blen = nbytes > CSRF_WIN ? CSRF_WIN : nbytes-1;
               int wlen = strlen(rctx->body_window); // lenght of the previous buffer
@@ -514,6 +515,7 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
               // FIXME: this corrupts the bb!!!
               // add the previous data to the brigade (always - does not matter if we find a match)
               last = apr_bucket_pool_create(rctx->body_window, wlen, bb->p, bb->bucket_alloc);
+
               if(loop == 0) {
                 // first bucket in the brigade (insert before does not work, see apr_ring.h)
                 APR_BRIGADE_INSERT_HEAD(bb, last);
@@ -540,15 +542,16 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
                 }
               }
               rctx->body_window[0] = '\0';
-
             }
 
-            /* 2. new buffer */
+            /*
+             * 2. new buffer
+             */
           restart:
             if(rctx->state != CSRF_RES_SEARCH_END) {
               marker = csrf_strncasestr(buf, rctx->search, nbytes);
               if(marker) {
-                /* found pattern */
+                // found pattern
                 apr_size_t sz = marker - buf;
                 if(rctx->state == CSRF_RES_SEARCH_HEAD) {
                   b = csrf_inject_head(r, bb, b, rctx, buf, sz);
@@ -566,12 +569,16 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
               }
             }
 
-            /* 3. end parsing if we are done */
+            /*
+             * 3. end parsing if we are done
+             */
             if(rctx->state == CSRF_RES_SEARCH_END) {
               break;
             }
 
-            /* 4. store the end (for next loop) */
+            /*
+             * 4. store the end (for next loop)
+             */
             if(CSRF_ENABLE_WINDOW && rctx->state != CSRF_RES_SEARCH_END) {
               int blen = nbytes > CSRF_WIN ? CSRF_WIN : nbytes-1;
               strncpy(rctx->body_window, &buf[nbytes - blen], blen);
