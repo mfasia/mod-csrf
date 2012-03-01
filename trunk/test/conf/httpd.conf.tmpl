@@ -64,11 +64,14 @@ LoadModule              unique_id_module ##ROOT##/../httpd/modules/metadata/.lib
 LoadModule              proxy_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy.so
 LoadModule              proxy_http_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy_http.so
 LoadModule              csrf_module ##ROOT##/../httpd/modules/csrf/.libs/mod_csrf.so
+LoadModule              setenvifplus_module ##ROOT##/../test/libexec/mod_setenvifplus.so
 LoadModule              parp_module ##ROOT##/../test/libexec/mod_parp.so
 
 Listen                  127.0.0.1:##PORT_BASE##
 <VirtualHost 127.0.0.1:##PORT_BASE##>
    ServerName             127.0.0.1
+
+   CSRF_Passphrase        HN_gVo6FXFj0
 
    TransferLog            ##ROOT##/logs/access_log
 
@@ -85,5 +88,9 @@ Listen                  127.0.0.1:##PORT_BASE##
 
    ProxyPass                  /htt http://localhost:##PORT_BASE1##/htt retry=0
    ProxyPassReverse           /htt http://localhost:##PORT_BASE1##/htt
+
+   <Location />
+    SetEnvIfPlus Host (.*) CSRF_ATTRIBUTE=$1
+   </Location>
 
 </VirtualHost>
