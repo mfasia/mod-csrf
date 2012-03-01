@@ -30,6 +30,16 @@ static const char g_revision[] = "0.0";
 /************************************************************************
  * Includes
  ***********************************************************************/
+/* openssl */
+#include <openssl/ssl.h>
+#include <openssl/crypto.h>
+#include <openssl/dh.h>
+#include <openssl/bn.h>
+#include <openssl/rand.h>
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
+#include <openssl/err.h>
+
 /* apache */
 #include <httpd.h>
 #include <http_main.h>
@@ -63,6 +73,9 @@ static const char g_revision[] = "0.0";
 #define CSRF_WIN 8
 // FIXME
 #define CSRF_ENABLE_WINDOW 0
+/* div */
+#define CSRF_RAND_SIZE 10
+
 
 /************************************************************************
  * structures
@@ -70,10 +83,16 @@ static const char g_revision[] = "0.0";
 /*
  * server configuration
  */
+#define CSRF_FUNC_FLAGS_KEY        0x10
+
 typedef struct {
   ap_regex_t *ignore_pattern; /** path pattern which disables request check */
   int enabled;                /** enabled by default (-1) or by user (1) */
   const char *id;
+  int flags;
+  unsigned char *sec;
+  int sec_len;
+  unsigned char key[EVP_MAX_KEY_LENGTH];
 } csrf_srv_config_t;
 
 typedef struct {
@@ -217,9 +236,112 @@ static apr_table_t *csrf_get_query(request_rec *r) {
   return qt;
 }
 
+/*
+ * Crypto routines (from mod_auth_oid.c)
+ */
+static char *csrf_dec64(request_rec *r, const char *str) {
+  csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
+  EVP_CIPHER_CTX cipher_ctx;
+  int len = 0;
+  int buf_len = 0;
+  unsigned char *buf;
+  char *dec = (char *)apr_palloc(r->pool, 1 + apr_base64_decode_len(str));
+  int dec_len = apr_base64_decode(dec, str);
+  buf = apr_pcalloc(r->pool, dec_len);
+
+  EVP_CIPHER_CTX_init(&cipher_ctx);
+  EVP_DecryptInit(&cipher_ctx, EVP_des_ede3_cbc(), sconf->key, NULL);
+  if(!EVP_DecryptUpdate(&cipher_ctx, (unsigned char *)&buf[buf_len], &len,
+                        (const unsigned char *)dec, dec_len)) {
+    goto failed;
+  }
+  buf_len+=len;
+  if(!EVP_DecryptFinal(&cipher_ctx, (unsigned char *)&buf[buf_len], &len)) {
+    goto failed;
+  }
+  buf_len+=len;
+  EVP_CIPHER_CTX_cleanup(&cipher_ctx);
+  
+  if(buf_len < CSRF_RAND_SIZE) {
+    goto failed;
+  }
+  if(buf[CSRF_RAND_SIZE-1] != 'A') {
+    goto failed;
+  }
+  buf = &buf[CSRF_RAND_SIZE];
+  buf_len = buf_len - CSRF_RAND_SIZE;
+
+  return apr_pstrndup(r->pool, (char *)buf, buf_len);
+     
+ failed:
+  EVP_CIPHER_CTX_cleanup(&cipher_ctx);
+  ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_INFO, 0, r,
+                CSRF_LOG_PFX(010)"Failed to decrypt data.");
+  return "";
+}
+
+static char *csrf_enc64(request_rec *r, const char *str) {
+  csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
+  char *e;
+  EVP_CIPHER_CTX cipher_ctx;
+  int buf_len = 0;
+  int len = 0;
+  unsigned char *rand = apr_pcalloc(r->pool, CSRF_RAND_SIZE);
+  unsigned char *buf = apr_pcalloc(r->pool,
+                                   CSRF_RAND_SIZE +
+                                   strlen(str) +
+                                   EVP_CIPHER_block_size(EVP_des_ede3_cbc()));
+  RAND_bytes(rand, CSRF_RAND_SIZE);
+  rand[CSRF_RAND_SIZE-1] = 'A';
+  EVP_CIPHER_CTX_init(&cipher_ctx);
+  EVP_EncryptInit(&cipher_ctx, EVP_des_ede3_cbc(), sconf->key, NULL);
+  if(!EVP_EncryptUpdate(&cipher_ctx, &buf[buf_len], &len,
+                        rand, CSRF_RAND_SIZE)) {
+    goto failed;
+  }
+  buf_len+=len;
+  if(!EVP_EncryptUpdate(&cipher_ctx, &buf[buf_len], &len,
+                        (const unsigned char *)str, strlen(str))) {
+    goto failed;
+  }
+  buf_len+=len;
+  if(!EVP_EncryptFinal(&cipher_ctx, &buf[buf_len], &len)) {
+    goto failed;
+  }
+  buf_len+=len;
+  EVP_CIPHER_CTX_cleanup(&cipher_ctx);
+
+  e = (char *)apr_pcalloc(r->pool, 1 + apr_base64_encode_len(buf_len));
+  len = apr_base64_encode(e, (const char *)buf, buf_len);
+  e[len] = '\0';
+  return e;
+
+failed:
+  EVP_CIPHER_CTX_cleanup(&cipher_ctx);
+  ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_INFO, 0, r,
+                CSRF_LOG_PFX(011)"Failed to encrypt data.");
+  return "";
+}
+
+/**
+ * Generate an id which contains defined data from the
+ * request header if available and a timestamp.
+ * Then encrypt the id with a predefined or random
+ * secret.
+ */
 static char *csrf_create_id(request_rec *r) {
-  // FIXME: implement generation
-  return apr_pstrdup(r->pool, "0000");
+  char *id;
+  char *enc_id;
+  char *bas64enc_id;
+  int len;
+  const char *csrf_att = apr_table_get(r->subprocess_env, "CSRF_ATTRIBUTE");
+  id = apr_pstrcat(r->pool, apr_psprintf(r->pool, "%"APR_TIME_T_FMT"", r->request_time),
+                   csrf_att != NULL ? apr_psprintf(r->pool, "#%s", csrf_att) : "" , NULL);
+  enc_id = (char *)apr_pcalloc(r->pool, strlen(id));
+  enc_id = csrf_enc64(r, apr_pstrcat(r->pool, id, NULL));
+  bas64enc_id = (char *)apr_pcalloc(r->pool, apr_base64_encode_len(strlen(enc_id)));
+  len = apr_base64_encode(bas64enc_id, enc_id, strlen(enc_id));
+  return bas64enc_id;
 }
 
 static int csrf_validate_id(request_rec *r, const char *id) {
@@ -579,6 +701,16 @@ static void *csrf_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
   }
   m->ignore_pattern = b->ignore_pattern;
   m->id = b->id;
+  if(o->flags & CSRF_FUNC_FLAGS_KEY) {
+    m->sec_len = o->sec_len;
+    m->sec = o->sec;
+    memcpy(m->key, o->key, sizeof(o->key));
+    m->flags |= CSRF_FUNC_FLAGS_KEY;
+  } else {
+    m->sec_len = b->sec_len;
+    m->sec = b->sec;
+    memcpy(m->key, b->key, sizeof(b->key));
+  }
   return m;
 }
 
@@ -593,6 +725,17 @@ const char *csrf_enable_cmd(cmd_parms *cmd, void *dcfg, int flag) {
   return NULL;
 }
 
+/* CSRF_Passphrase */
+const char *csrf_pwd_cmd(cmd_parms *cmd, void *dcfg, const char *pwd) {
+  csrf_srv_config_t *sconf = ap_get_module_config(cmd->server->module_config, &csrf_module);
+  sconf->sec = (unsigned char *)apr_pstrcat(cmd->pool, pwd, "W9sO.4h7-6PU", NULL);
+  sconf->sec_len = strlen((char *)sconf->sec);
+  EVP_BytesToKey(EVP_des_ede3_cbc(), EVP_sha1(), NULL, sconf->sec,
+                 sconf->sec_len, 1, sconf->key, NULL);
+  sconf->flags |= CSRF_FUNC_FLAGS_KEY;
+  return NULL;
+}
+
 static const command_rec csrf_config_cmds[] = {
   // TODO add directive do override ignore pattern sconf->ignore_pattern
   // TODO specify action (log, deny, off) insted of on/off only
@@ -600,6 +743,10 @@ static const command_rec csrf_config_cmds[] = {
   AP_INIT_FLAG("CSRF_Enable", csrf_enable_cmd, NULL,
                RSRC_CONF|ACCESS_CONF,
                "CSRF_Enable 'on'|'off', enables the module. Default is 'on'."),
+  AP_INIT_TAKE1("CSRF_Passphrase", csrf_pwd_cmd, NULL,
+                RSRC_CONF,
+                "CSRF_Passphrase <string>, used for 'csrfpId' encryption."
+                " Default is a non-persistent random passphrase."),
   { NULL }
 };
 
