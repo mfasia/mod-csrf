@@ -73,6 +73,7 @@ static const char g_revision[] = "0.0";
 #define CSRF_WIN 8
 // FIXME
 #define CSRF_ENABLE_WINDOW 1
+#define CSRF_CHUNKED_ONLY 1
 /* div */
 #define CSRF_RAND_SIZE 10
 
@@ -112,6 +113,9 @@ typedef struct {
   csrf_conn_state_e state;
   char *search;
   char *body_window;
+  char *script; // meta loading the script
+  char *method; // javascript code calling the inject method
+  apr_pool_t *pool;
 } csrf_req_ctx;
 
 /************************************************************************
@@ -139,23 +143,37 @@ static APR_OPTIONAL_FN_TYPE(parp_hp_table) *csrf_parp_hp_table_fn = NULL;
  */
 static const char *csrf_strncasestr(const char *s1, const char *s2, int len) {
   const char *e1 = &s1[len-1];
-  const char *p, *q;
-  for (; *s1 && (s1 <= e1); s1++) {
-    p = s1, q = s2;
-    while(*q && *p && (q <= e1)) {
-      if (apr_tolower(*q) != apr_tolower(*p)) {
-        break;
-      }
-      p++, q++;
-    }
-    if(q > e1) {
-      return NULL;
-    }
-    if(*q == 0) {
-      return (char *)s1;
-    }
+  char *p1, *p2;
+  if (*s2 == '\0') {
+    /* an empty s2 */
+    return((char *)s1);
   }
-  return 0;
+  while(1) {
+    for ( ; (*s1 != '\0') && (s1 <= e1) && (apr_tolower(*s1) != apr_tolower(*s2)); s1++);
+    if (*s1 == '\0' || s1 > e1) {
+      return(NULL);
+    }
+    /* found first character of s2, see if the rest matches */
+    p1 = (char *)s1;
+    p2 = (char *)s2;
+    for (++p1, ++p2; (apr_tolower(*p1) == apr_tolower(*p2)) && (p1 <= e1); ++p1, ++p2) {
+      if((p1 > e1) && (*p2 != '\0')) {
+        // reached the end without match
+        return NULL;
+      }
+      if (*p2 == '\0') {
+        /* both strings ended together */
+        return((char *)s1);
+      }
+    }
+    if (*p2 == '\0') {
+      /* second string ended, a match */
+      break;
+    }
+    /* didn't find a match here, try starting at next character in s1 */
+    s1++;
+  }
+  return((char *)s1);
 }
 
 /**
@@ -381,14 +399,11 @@ static const char *csrf_get_contenttype(request_rec *r) {
 static apr_bucket *csrf_inject_head(request_rec *r, apr_bucket_brigade *bb, apr_bucket *b,
                                     csrf_req_ctx *rctx,
                                     const char *buf, apr_size_t sz) {
-  char *content = apr_pstrdup(bb->p, "<script language=\"JavaScript\""
-                              " src=\"/csrf.js\" type=\"text/javascript\">"
-                              "</script>\n");
   apr_bucket *e;
   apr_bucket_split(b, sz);
   b = APR_BUCKET_NEXT(b);
-  e = apr_bucket_pool_create(content, strlen(content), bb->p,
-                             bb->bucket_alloc);
+  e = apr_bucket_pool_create(rctx->script, strlen(rctx->script), r->pool, bb->bucket_alloc);
+
   APR_BUCKET_INSERT_BEFORE(b, e);
   rctx->state = CSRF_RES_SEARCH_BODY;
   rctx->search = apr_pstrdup(r->pool, "</body>");
@@ -409,18 +424,11 @@ static apr_bucket *csrf_inject_head(request_rec *r, apr_bucket_brigade *bb, apr_
 static apr_bucket *csrf_inject_body(request_rec *r, apr_bucket_brigade *bb, apr_bucket *b,
                                     csrf_req_ctx *rctx,
                                     const char *buf, apr_size_t sz) {
-  csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
-  char *content = apr_psprintf(bb->p, "<script type=\"text/javascript\">\n"
-                               "<!--\ncsrfInsert(\"%s\", \"%s\");\n"
-                               "//-->\n"
-                               "</script>\n",
-                               sconf->id,
-                               csrf_create_id(r));
   apr_bucket *e;
   apr_bucket_split(b, sz);
   b = APR_BUCKET_NEXT(b);
-  e = apr_bucket_pool_create(content, strlen(content), bb->p,
-                             bb->bucket_alloc);
+  e = apr_bucket_pool_create(rctx->method, strlen(rctx->method), r->pool, bb->bucket_alloc);
+
   APR_BUCKET_INSERT_BEFORE(b, e);
   rctx->state = CSRF_RES_SEARCH_END;
   rctx->search = NULL;
@@ -436,11 +444,22 @@ static apr_bucket *csrf_inject_body(request_rec *r, apr_bucket_brigade *bb, apr_
 static csrf_req_ctx *csrf_get_rctx(request_rec *r) {
   csrf_req_ctx *rctx = ap_get_module_config(r->request_config, &csrf_module);
   if(rctx == NULL) {
+    csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
     rctx = apr_pcalloc(r->pool, sizeof(csrf_req_ctx));
     rctx->state = CSRF_RES_NEW;
     rctx->search = NULL;
     rctx->body_window = apr_pcalloc(r->pool, 2*CSRF_WIN+1);
     rctx->body_window[0] = '\0';
+    rctx->method = apr_psprintf(r->pool, "<script type=\"text/javascript\">\n"
+                                "<!--\ncsrfInsert(\"%s\", \"%s\");\n"
+                                "//-->\n"
+                                "</script>\n",
+                                sconf->id,
+                                csrf_create_id(r));
+    rctx->script = apr_pstrdup(r->pool, "<script language=\"JavaScript\""
+                               " src=\"/csrf.js\" type=\"text/javascript\">"
+                               "</script>\n");
+    rctx->pool = NULL;
     ap_set_module_config(r->request_config, &csrf_module, rctx);
   }
   return rctx;
@@ -473,8 +492,44 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
       ap_remove_output_filter(f);
     } else {
       // start searching head/body to inject our script
-      apr_table_unset(r->headers_out, "Content-Length"); // chunked
-      apr_table_unset(r->err_headers_out, "Content-Length");
+      if(CSRF_CHUNKED_ONLY) {
+        // send as chunked response
+        apr_table_unset(r->headers_out, "Content-Length");
+        apr_table_unset(r->err_headers_out, "Content-Length");
+        r->chunked = 1;
+      } else {
+        // adjust the content-length header
+        // TODO append dummy bytes if we can't inject the data
+        int errh = 0;
+        const char* cl =  apr_table_get(r->headers_out, "Content-Length");
+        if(!cl) {
+          errh = 1;
+          cl =  apr_table_get(r->err_headers_out, "Content-Length");
+        }
+        if(cl) {
+          // adjust non-chunked response
+          char *length;
+          apr_off_t s;
+          char *errp = NULL;
+          if(apr_strtoff(&s, cl, &errp, 10) == APR_SUCCESS) {
+            s = s + strlen(rctx->script) + strlen(rctx->method);
+            length = apr_psprintf(r->pool, "%"APR_OFF_T_FMT, s);
+            if(!errh) {
+              apr_table_set(r->headers_out, "Content-Length", length);
+            } else {
+              apr_table_set(r->err_headers_out, "Content-Length", length);
+            }
+          } else {
+            // fallback to chunked
+            r->chunked = 1;
+            if(!errh) {
+              apr_table_unset(r->headers_out, "Content-Length");
+            } else {
+              apr_table_unset(r->err_headers_out, "Content-Length");
+            }
+          }
+        }
+      }
       apr_table_add(r->headers_out, "Cache-Control", "no-cache, no-store");
       apr_table_unset(r->headers_out, "Etag");
       rctx->state = CSRF_RES_SEARCH_HEAD;
@@ -486,6 +541,11 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
   if(rctx->search) {
     apr_bucket *b;
     int loop = 0;
+    /* pool to allocate buckets from (used to insert buffer from previous loop)
+       this pool survices this filter call in we destroy it when we are called
+       the next time because we expect that the bucket has been send to the network */
+    apr_pool_t *pool;
+    apr_pool_create(&pool, r->pool);
     for(b = APR_BRIGADE_FIRST(bb); b != APR_BRIGADE_SENTINEL(bb); b = APR_BUCKET_NEXT(b)) {
       if(APR_BUCKET_IS_EOS(b)) {
         /* If we ever see an EOS, make sure to FLUSH. */
@@ -512,10 +572,10 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
               strncpy(&rctx->body_window[wlen], buf, blen);
               rctx->body_window[wlen+blen+1] = '\0';
 
-              // FIXME: this corrupts the bb!!!
               // add the previous data to the brigade (always - does not matter if we find a match)
-              last = apr_bucket_pool_create(rctx->body_window, wlen, bb->p, bb->bucket_alloc);
-
+              // note: we need the temp. per loop pool to allocate the bucket from
+              last = apr_bucket_pool_create(apr_pstrndup(pool, rctx->body_window, wlen), wlen,
+                                            pool, bb->bucket_alloc);
               if(loop == 0) {
                 // first bucket in the brigade (insert before does not work, see apr_ring.h)
                 APR_BRIGADE_INSERT_HEAD(bb, last);
@@ -580,18 +640,24 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
              * 4. store the end (for next loop)
              */
             if(CSRF_ENABLE_WINDOW && rctx->state != CSRF_RES_SEARCH_END) {
+              apr_bucket *rb;
               int blen = nbytes > CSRF_WIN ? CSRF_WIN : nbytes-1;
               strncpy(rctx->body_window, &buf[nbytes - blen], blen);
               rctx->body_window[blen] = '\0';
               apr_bucket_split(b, nbytes - blen);
-              b = APR_BUCKET_NEXT(b);
-              APR_BUCKET_REMOVE(b);
+              rb = APR_BUCKET_NEXT(b);
+              APR_BUCKET_REMOVE(rb);
             }
           }
         }
       }
       loop++;
     }
+    if(rctx->pool) {
+      // this data is no longer needed
+      apr_pool_destroy(rctx->pool);
+    }
+    rctx->pool = pool; // store pool (until the buckets are sent)
   }
   return ap_pass_brigade(f->next, bb);
 }
