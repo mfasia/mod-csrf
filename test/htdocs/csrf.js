@@ -68,6 +68,7 @@ function addToForms(paramName, csrfId) {
 function csrfInsert(paramName, csrfId) {
   var i;
   document.write("id to add: " + csrfId + "<br/>");
+  document.write("domain: " + document.domain + "<br/>");
 
   var links = document.links;
   document.write("number of links: " + links.length + "<br/>");

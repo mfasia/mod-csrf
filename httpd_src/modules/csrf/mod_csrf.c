@@ -209,6 +209,7 @@ static int csrf_ignore_req(request_rec *r) {
     // cache: check regex only once
     return 1;
   }
+  // TODO: ignore by env variable
   if(r->parsed_uri.path) {
     const char *path = strrchr(r->parsed_uri.path, '/'); // faster than match against a long string
     if(path == NULL) {
@@ -456,9 +457,11 @@ static csrf_req_ctx *csrf_get_rctx(request_rec *r) {
                                 "</script>\n",
                                 sconf->id,
                                 csrf_create_id(r));
-    rctx->script = apr_pstrdup(r->pool, "<script language=\"JavaScript\""
-                               " src=\"/csrf.js\" type=\"text/javascript\">"
-                               "</script>\n");
+    // TODO: directive to configure alternative script path /csrf.js?000
+    rctx->script = apr_psprintf(r->pool, "<script language=\"JavaScript\""
+                               " src=\"%s\" type=\"text/javascript\">"
+                                "</script>\n",
+                                "/csrf.js?000");
     rctx->pool = NULL;
     ap_set_module_config(r->request_config, &csrf_module, rctx);
   }
@@ -499,7 +502,7 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
         r->chunked = 1;
       } else {
         // adjust the content-length header
-        // TODO append dummy bytes if we can't inject the data
+        // TODO: append dummy bytes if we can't inject the data
         int errh = 0;
         const char* cl =  apr_table_get(r->headers_out, "Content-Length");
         if(!cl) {
@@ -619,7 +622,7 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
                   if(apr_bucket_read(b, &buf, &nbytes, APR_BLOCK_READ) == APR_SUCCESS) {
                     goto restart;
                   } else {
-                    // TODO error handling?
+                    // TODO: error handling?
                     break;
                   }
                 } else if(rctx->state == CSRF_RES_SEARCH_BODY) {
@@ -810,9 +813,9 @@ const char *csrf_pwd_cmd(cmd_parms *cmd, void *dcfg, const char *pwd) {
 }
 
 static const command_rec csrf_config_cmds[] = {
-  // TODO add directive do override ignore pattern sconf->ignore_pattern
-  // TODO specify action (log, deny, off) insted of on/off only
-  // TODO directive to override CSRF_QUERYID
+  // TODO: add directive do override ignore pattern sconf->ignore_pattern
+  // TODO: specify action (log, deny, off) insted of on/off only
+  // TODO: directive to override CSRF_QUERYID
   AP_INIT_FLAG("CSRF_Enable", csrf_enable_cmd, NULL,
                RSRC_CONF|ACCESS_CONF,
                "CSRF_Enable 'on'|'off', enables the module. Default is 'on'."),
