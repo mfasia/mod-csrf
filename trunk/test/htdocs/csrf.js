@@ -23,6 +23,15 @@ var types = [
 	     ["a",          "href" ]
 	     ];
 
+
+// dynamit/ajax requests overriding the send function
+//XMLHttpRequest.prototype.trueSend = XMLHttpRequest.prototype.send;
+//XMLHttpRequest.prototype.send = function(params) {
+//	// hijack "this"
+//	this.trueSend(params);
+//};
+
+
 // adds the csrfId to all known refernce nodes
 function addToNodes(paramName, csrfId) {
   // iterate through all known types, e.g. "a"
