@@ -71,7 +71,6 @@ static const char g_revision[] = "0.0";
 
 #define CSRF_QUERYID "csrfpId"
 #define CSRF_WIN 8
-// FIXME
 #define CSRF_ENABLE_WINDOW 1
 #define CSRF_CHUNKED_ONLY 1
 /* div */
@@ -86,20 +85,24 @@ static const char g_revision[] = "0.0";
 /*
  * server configuration
  */
+#define CSRF_FUNC_FLAGS_SCRIPT     0x01
 #define CSRF_FUNC_FLAGS_KEY        0x10
 
 typedef struct {
+  int flags;
   ap_regex_t *ignore_pattern; /** path pattern which disables request check */
   int enabled;                /** enabled by default (-1) or by user (1) */
   const char *id;
-  int flags;
   unsigned char *sec;
   int sec_len;
   unsigned char key[EVP_MAX_KEY_LENGTH];
+  char *path2script;
 } csrf_srv_config_t;
 
 typedef struct {
+  int flags;
   int enabled;                /** enabled by default (-1) or by user (1) */
+  char *path2script;
 } csrf_dir_config_t;
 
 typedef enum  {
@@ -322,7 +325,7 @@ static char *csrf_enc64(request_rec *r, const char *str) {
   }
   buf_len+=len;
   EVP_CIPHER_CTX_cleanup(&cipher_ctx);
-
+  // TODO: better to use our own encoding (not base64, avoid "+", "/", and "=" chars)
   e = (char *)apr_pcalloc(r->pool, 1 + apr_base64_encode_len(buf_len));
   len = apr_base64_encode(e, (const char *)buf, buf_len);
   e[len] = '\0';
@@ -446,6 +449,7 @@ static csrf_req_ctx *csrf_get_rctx(request_rec *r) {
   csrf_req_ctx *rctx = ap_get_module_config(r->request_config, &csrf_module);
   if(rctx == NULL) {
     csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
+    csrf_dir_config_t *dconf = ap_get_module_config(r->per_dir_config, &csrf_module);
     rctx = apr_pcalloc(r->pool, sizeof(csrf_req_ctx));
     rctx->state = CSRF_RES_NEW;
     rctx->search = NULL;
@@ -457,11 +461,10 @@ static csrf_req_ctx *csrf_get_rctx(request_rec *r) {
                                 "</script>\n",
                                 sconf->id,
                                 csrf_create_id(r));
-    // TODO: directive to configure alternative script path /csrf.js?000
     rctx->script = apr_psprintf(r->pool, "<script language=\"JavaScript\""
                                " src=\"%s\" type=\"text/javascript\">"
                                 "</script>\n",
-                                "/csrf.js?000");
+                                dconf->path2script ? dconf->path2script : sconf->path2script);
     rctx->pool = NULL;
     ap_set_module_config(r->request_config, &csrf_module, rctx);
   }
@@ -743,6 +746,7 @@ static int csrf_post_config(apr_pool_t *pconf, apr_pool_t *plog,
 static void *csrf_dir_config_create(apr_pool_t *p, char *d) {
   csrf_dir_config_t *dconf = apr_pcalloc(p, sizeof(csrf_dir_config_t));
   dconf->enabled = -1;
+  dconf->path2script = NULL; // use server config by default
   return dconf;
 }
 
@@ -755,6 +759,12 @@ static void *csrf_dir_config_merge(apr_pool_t *p, void *basev, void *addv) {
   } else {
     m->enabled = b->enabled;
   }
+  if(o->flags & CSRF_FUNC_FLAGS_SCRIPT) {
+    m->path2script = o->path2script;
+    m->flags |= CSRF_FUNC_FLAGS_SCRIPT;
+  } else {
+    m->path2script = b->path2script;
+  }
   return m;
 }
 
@@ -763,6 +773,7 @@ static void *csrf_srv_config_create(apr_pool_t *p, server_rec *s) {
   sconf->ignore_pattern = ap_pregcomp(p, CSRF_IGNORE_PATTERN, AP_REG_ICASE);
   sconf->id = apr_pstrdup(p, CSRF_QUERYID);
   sconf->enabled = -1;
+  sconf->path2script = apr_pstrdup(p, "/csrf.js?000");
   return sconf;
 }
 
@@ -786,6 +797,12 @@ static void *csrf_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
     m->sec_len = b->sec_len;
     m->sec = b->sec;
     memcpy(m->key, b->key, sizeof(b->key));
+  }
+  if(o->flags & CSRF_FUNC_FLAGS_SCRIPT) {
+    m->path2script = o->path2script;
+    m->flags |= CSRF_FUNC_FLAGS_SCRIPT;
+  } else {
+    m->path2script = b->path2script;
   }
   return m;
 }
@@ -816,6 +833,7 @@ static const command_rec csrf_config_cmds[] = {
   // TODO: add directive do override ignore pattern sconf->ignore_pattern
   // TODO: specify action (log, deny, off) insted of on/off only
   // TODO: directive to override CSRF_QUERYID
+  // TODO: per server/location directive to define path2script
   AP_INIT_FLAG("CSRF_Enable", csrf_enable_cmd, NULL,
                RSRC_CONF|ACCESS_CONF,
                "CSRF_Enable 'on'|'off', enables the module. Default is 'on'."),
