@@ -3,8 +3,9 @@
   <head>
     <title>start page</title>
     <meta http-equiv="Pragma" content="no-cache">
+    <script language="JavaScript" src="/scripts/ajaxsimple.js" type="text/javascript"></script>
   </head>
-  <body>
+  <body onLoad="autoStart();">
     <h1>start page</h1>
 
     <p>
@@ -25,11 +26,19 @@
 <!--
 var d = document.getElementById('dynamic');
 var link = document.createElement('a');
-link.setAttribute('href', '/login.do?transfer=1000');
+link.setAttribute('href', '/login.html?transfer=1000');
 link.textContent = "dynmic link";
 d.appendChild(link);
 //-->
 </script>
+
+    <p>
+"ajax" status: <div id="autoupdate">-</div>
+    </p>
+
+    <p>
+"ajax" XML status: <div id="autosend">-</div>
+    </p>
 
     <p>
     <form action="/index.html" method="POST">

@@ -28,8 +28,9 @@ A) add an "unique_id" to each request (having args)
   - to each http request performed by the browser
     -> we can't support all browsers
 
-B) milestones (see http://opensource.adnovum.ch/mod_qos/#QS_MileStone)
+B) milestones
 - user must visit previous page
+  see http://opensource.adnovum.ch/mod_qos/#QS_MileStone
 
 C) referer header
-- "classic" csrf only
+- "classic" csrf only using referer/origin header

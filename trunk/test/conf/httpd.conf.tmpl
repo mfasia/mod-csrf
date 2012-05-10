@@ -51,7 +51,7 @@ DefaultType             text/plain
 AddType                 text/html .shtml
 AddOutputFilter         INCLUDES .shtml
 
-LogFormat               "%h %l %u %t \"%r\" %>s %{content-length}i %b \"%{User-Agent}i\" %T id=%{UNIQUE_ID}e #%P"
+LogFormat               "%h %l %u %t \"%r\" %>s %{content-length}i %b \"%{User-Agent}i\" %T id=%{UNIQUE_ID}e %{CSRF_ATTRIBUTE}e %{csrfpId}i #%P"
 
 LogLevel                warn
 ErrorLog                ##ROOT##/logs/error_log
@@ -66,31 +66,34 @@ LoadModule              proxy_http_module ##ROOT##/../httpd/modules/proxy/.libs/
 LoadModule              csrf_module ##ROOT##/../httpd/modules/csrf/.libs/mod_csrf.so
 LoadModule              setenvifplus_module ##ROOT##/../test/libexec/mod_setenvifplus.so
 LoadModule              parp_module ##ROOT##/../test/libexec/mod_parp.so
+LoadModule              qos_module ##ROOT##/../test/libexec/mod_qos.so
 
 Listen                  127.0.0.1:##PORT_BASE##
 <VirtualHost 127.0.0.1:##PORT_BASE##>
    ServerName             127.0.0.1
+   TransferLog            ##ROOT##/logs/access_log
 
    CSRF_Passphrase        HN_gVo6FXFj0
 
-   TransferLog            ##ROOT##/logs/access_log
 
    <Location /status>
-       SetHandler server-status
+      SetHandler server-status
    </Location>
 
 
-   ProxyRequests              Off
+   ProxyRequests          Off
+   ProxyPass              /htt http://localhost:##PORT_BASE1##/htt retry=0
+   ProxyPassReverse       /htt http://localhost:##PORT_BASE1##/htt
    <Proxy *>
       Order deny,allow
       Allow from all
    </Proxy>
 
-   ProxyPass                  /htt http://localhost:##PORT_BASE1##/htt retry=0
-   ProxyPassReverse           /htt http://localhost:##PORT_BASE1##/htt
-
+   # set a user tracking cookie which shall be part of the csrf id
+   QS_UserTrackingCookieName            csrfuid
    <Location />
-    SetEnvIfPlus Host (.*) CSRF_ATTRIBUTE=$1
+      SetEnvIfPlus Host (.*)            CSRF_ATTRIBUTE=$1
+      SetEnvIfPlus mod_qos_user_id (.*) CSRF_ATTRIBUTE=${CSRF_ATTRIBUTE}:$1
    </Location>
 
 </VirtualHost>
