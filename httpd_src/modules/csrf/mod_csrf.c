@@ -364,12 +364,20 @@ static int csrf_validate_id(request_rec *r, const char *id) {
  *
  * @param r
  * @param tl Table containg the request parameters
+ * @param idheader The ID may be transmited by a HTTP header
  * @param msg Error message if validation fails
  * @return 1 on success (0 if request id is not available or invalid)
  */
-static int csrf_validate_req_id(request_rec *r, apr_table_t *tl, char **msg) {
+static int csrf_validate_req_id(request_rec *r, apr_table_t *tl, 
+                                const char *idheader, char **msg) {
   csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
   const char *csrfid = apr_table_get(tl, sconf->id);
+  if(csrfid != NULL) {
+    // got query, mod_parp should remove the parameter
+    // TODO: use mod_parp >= 0.11 and remove (delete=1) the parameter
+  } else {
+    csrfid = idheader;
+  }
   if(csrfid != NULL) {
     return csrf_validate_id(r, csrfid);
   }
@@ -455,6 +463,7 @@ static csrf_req_ctx *csrf_get_rctx(request_rec *r) {
     rctx->search = NULL;
     rctx->body_window = apr_pcalloc(r->pool, 2*CSRF_WIN+1);
     rctx->body_window[0] = '\0';
+    // TODO: better to inject the id into the js file than the html doc (better protection from being fetched by a script)
     rctx->method = apr_psprintf(r->pool, "<script type=\"text/javascript\">\n"
                                 "<!--\ncsrfInsert(\"%s\", \"%s\");\n"
                                 "//-->\n"
@@ -678,8 +687,11 @@ static int csrf_fixup(request_rec * r) {
   if(ap_is_initial_req(r) && csrf_enabled(r)) {
     ap_add_output_filter("csrf_out_filter_body", NULL, r, r->connection);
     if(!csrf_ignore_req(r)) {
+      csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
       apr_table_t *tl = NULL;
       char *msg = NULL;
+      const char *idheader = apr_table_get(r->headers_in, sconf->id);
+      fprintf(stderr, "$$$ %s\n", idheader); fflush(stderr);
       if(csrf_parp_hp_table_fn) {
         tl = csrf_parp_hp_table_fn(r);
       }
@@ -687,13 +699,14 @@ static int csrf_fixup(request_rec * r) {
         // parp was not active/loaded, we read the request query ourself
         tl = csrf_get_query(r);
       }
-      if(tl == NULL) {
+      // id may be transmitted by header or query
+      if(tl == NULL && idheader == NULL) {
         /* no request query/body 
          * => nothing to do here since we don't validate "simple" 
          *    requests without any parameters */
         return DECLINED;
       }
-      if(!csrf_validate_req_id(r, tl, &msg)) {
+      if(!csrf_validate_req_id(r, tl, idheader, &msg)) {
         ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r,
                       CSRF_LOG_PFX(000)"request denied, %s", msg ? msg : "");
         return HTTP_FORBIDDEN;

@@ -19,18 +19,34 @@
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 //
 
+// TODO: additonal types (some may contain javascript fragments)
 var types = [
 	     ["a",          "href" ]
 	     ];
 
-
-// dynamit/ajax requests overriding the send function
-//XMLHttpRequest.prototype.trueSend = XMLHttpRequest.prototype.send;
-//XMLHttpRequest.prototype.send = function(params) {
-//	// hijack "this"
-//	this.trueSend(params);
-//};
-
+// dynamic/ajax requests overriding the send function appending the id as a request header
+function registerAjax(paramName, csrfId) {
+  // TODO: add support for IE
+//  if(window.ActiveXObject) { // IE
+//    
+//  } else {
+    XMLHttpRequest.prototype._open = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url, async, user, pass) {
+      this._open.apply(this, arguments);
+    }
+    XMLHttpRequest.prototype._send = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function(data) {
+      if(this.onsend != null) {
+	this.onsend.apply(this, arguments);
+      }
+      this._send.apply(this, arguments);
+    }
+    XMLHttpRequest.prototype.onsend = function(data) {
+      // add the id as a request header (don't want (know how) to modify the url)
+      this.setRequestHeader(paramName, csrfId);
+    }
+//  }
+};
 
 // adds the csrfId to all known refernce nodes
 function addToNodes(paramName, csrfId) {
@@ -75,15 +91,18 @@ function addToForms(paramName, csrfId) {
 }
 
 function csrfInsert(paramName, csrfId) {
-  var i;
-  document.write("id to add: " + csrfId + "<br/>");
-  document.write("domain: " + document.domain + "<br/>");
+//  var i;
+//  document.write("id to add: " + csrfId + "<br/>");
+//  document.write("domain: " + document.domain + "<br/>");
+//
+//  var links = document.links;
+//  document.write("number of links: " + links.length + "<br/>");
+//
+//  var forms = document.getElementsByTagName("form");
+//  document.write("number of forms: " + forms.length + "<br/>");
 
-  var links = document.links;
-  document.write("number of links: " + links.length + "<br/>");
-
-  var forms = document.getElementsByTagName("form");
-  document.write("number of forms: " + forms.length + "<br/>");
+  // register callbacks when sending data by the browser
+  registerAjax(paramName, csrfId);
 
   // simple references
   addToNodes(paramName, csrfId);
