@@ -26,10 +26,6 @@ var types = [
 
 // dynamic/ajax requests overriding the send function appending the id as a request header
 function registerAjax(paramName, csrfId) {
-  // TODO: add support for IE
-//  if(window.ActiveXObject) { // IE
-//    
-//  } else {
     XMLHttpRequest.prototype._open = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function(method, url, async, user, pass) {
       this._open.apply(this, arguments);
@@ -45,7 +41,6 @@ function registerAjax(paramName, csrfId) {
       // add the id as a request header (don't want (know how) to modify the url)
       this.setRequestHeader(paramName, csrfId);
     }
-//  }
 };
 
 // adds the csrfId to all known refernce nodes

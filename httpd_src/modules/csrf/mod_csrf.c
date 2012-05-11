@@ -134,6 +134,132 @@ static APR_OPTIONAL_FN_TYPE(parp_hp_table) *csrf_parp_hp_table_fn = NULL;
  * private
  ***********************************************************************/
 
+static const char csrf_basis_64[] =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_/";
+
+/* aaaack but it's fast and const should make it shared text page. */
+static const unsigned char csrf_pr2six[256] = {
+    /* ASCII table */
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 63,
+    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 64, 64, 64, 64, 64, 64,
+    64,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
+    15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 64, 64, 64, 64, 62,
+    64, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64
+};
+
+static int csrf_token64_encode_len(int len) {
+  return ((len + 2) / 3 * 4) + 1;
+}
+
+static int csrf_token64_encode_binary(char *encoded,
+                                      const unsigned char *string, int len) {
+  int i;
+  char *p;
+
+  p = encoded;
+  for (i = 0; i < len - 2; i += 3) {
+    *p++ = csrf_basis_64[(string[i] >> 2) & 0x3F];
+    *p++ = csrf_basis_64[((string[i] & 0x3) << 4) |
+                    ((int) (string[i + 1] & 0xF0) >> 4)];
+    *p++ = csrf_basis_64[((string[i + 1] & 0xF) << 2) |
+                    ((int) (string[i + 2] & 0xC0) >> 6)];
+    *p++ = csrf_basis_64[string[i + 2] & 0x3F];
+  }
+  if (i < len) {
+    *p++ = csrf_basis_64[(string[i] >> 2) & 0x3F];
+    if (i == (len - 1)) {
+      *p++ = csrf_basis_64[((string[i] & 0x3) << 4)];
+      *p++ = '=';
+    }
+    else {
+      *p++ = csrf_basis_64[((string[i] & 0x3) << 4) |
+                      ((int) (string[i + 1] & 0xF0) >> 4)];
+      *p++ = csrf_basis_64[((string[i + 1] & 0xF) << 2)];
+    }
+    *p++ = '=';
+  }
+  
+  *p++ = '\0';
+  return (int)(p - encoded);
+}
+
+static int csrf_token64_encode(char *encoded, const char *string, int len) {
+  return csrf_token64_encode_binary(encoded, (const unsigned char *) string, len);
+}
+
+static int csrf_token64_decode_len(const char *bufcoded) {
+  int nbytesdecoded;
+  register const unsigned char *bufin;
+  register apr_size_t nprbytes;
+  
+  bufin = (const unsigned char *) bufcoded;
+  while (csrf_pr2six[*(bufin++)] <= 63);
+  
+  nprbytes = (bufin - (const unsigned char *) bufcoded) - 1;
+  nbytesdecoded = (((int)nprbytes + 3) / 4) * 3;
+  
+  return nbytesdecoded + 1;
+}
+
+static int csrf_token64_decode_binary(unsigned char *bufplain,
+                                      const char *bufcoded) {
+  int nbytesdecoded;
+  register const unsigned char *bufin;
+  register unsigned char *bufout;
+  register apr_size_t nprbytes;
+  
+  bufin = (const unsigned char *) bufcoded;
+  while (csrf_pr2six[*(bufin++)] <= 63);
+  nprbytes = (bufin - (const unsigned char *) bufcoded) - 1;
+  nbytesdecoded = (((int)nprbytes + 3) / 4) * 3;
+  
+  bufout = (unsigned char *) bufplain;
+  bufin = (const unsigned char *) bufcoded;
+  
+  while (nprbytes > 4) {
+    *(bufout++) =
+      (unsigned char) (csrf_pr2six[*bufin] << 2 | csrf_pr2six[bufin[1]] >> 4);
+    *(bufout++) =
+      (unsigned char) (csrf_pr2six[bufin[1]] << 4 | csrf_pr2six[bufin[2]] >> 2);
+    *(bufout++) =
+      (unsigned char) (csrf_pr2six[bufin[2]] << 6 | csrf_pr2six[bufin[3]]);
+    bufin += 4;
+    nprbytes -= 4;
+  }
+  
+  /* Note: (nprbytes == 1) would be an error, so just ingore that case */
+  if (nprbytes > 1) {
+    *(bufout++) =
+      (unsigned char) (csrf_pr2six[*bufin] << 2 | csrf_pr2six[bufin[1]] >> 4);
+  }
+  if (nprbytes > 2) {
+    *(bufout++) =
+      (unsigned char) (csrf_pr2six[bufin[1]] << 4 | csrf_pr2six[bufin[2]] >> 2);
+  }
+  if (nprbytes > 3) {
+    *(bufout++) =
+      (unsigned char) (csrf_pr2six[bufin[2]] << 6 | csrf_pr2six[bufin[3]]);
+  }
+  
+  nbytesdecoded -= (4 - (int)nprbytes) & 3;
+  return nbytesdecoded;
+}
+
+static int csrf_token64_decode(char *bufplain, const char *bufcoded) {
+  return csrf_token64_decode_binary((unsigned char *) bufplain, bufcoded);
+}
+
 /*
  * Similar to standard strstr() but case insensitive and lenght limitation
  * (char which is not 0 terminated).
@@ -260,8 +386,8 @@ static char *csrf_dec64(request_rec *r, const char *str) {
   int len = 0;
   int buf_len = 0;
   unsigned char *buf;
-  char *dec = (char *)apr_palloc(r->pool, 1 + apr_base64_decode_len(str));
-  int dec_len = apr_base64_decode(dec, str);
+  char *dec = (char *)apr_palloc(r->pool, 1 + csrf_token64_decode_len(str));
+  int dec_len = csrf_token64_decode(dec, str);
   buf = apr_pcalloc(r->pool, dec_len);
 
   EVP_CIPHER_CTX_init(&cipher_ctx);
@@ -325,9 +451,9 @@ static char *csrf_enc64(request_rec *r, const char *str) {
   }
   buf_len+=len;
   EVP_CIPHER_CTX_cleanup(&cipher_ctx);
-  // TODO: better to use our own encoding (not base64, avoid "+", "/", and "=" chars)
-  e = (char *)apr_pcalloc(r->pool, 1 + apr_base64_encode_len(buf_len));
-  len = apr_base64_encode(e, (const char *)buf, buf_len);
+  // better to use our own encoding (not base64, avoid "+", "/", and "=" chars)
+  e = (char *)apr_pcalloc(r->pool, 1 + csrf_token64_encode_len(buf_len));
+  len = csrf_token64_encode(e, (const char *)buf, buf_len);
   e[len] = '\0';
   return e;
 
@@ -691,7 +817,6 @@ static int csrf_fixup(request_rec * r) {
       apr_table_t *tl = NULL;
       char *msg = NULL;
       const char *idheader = apr_table_get(r->headers_in, sconf->id);
-      fprintf(stderr, "$$$ %s\n", idheader); fflush(stderr);
       if(csrf_parp_hp_table_fn) {
         tl = csrf_parp_hp_table_fn(r);
       }
