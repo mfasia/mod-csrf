@@ -75,6 +75,8 @@ static const char g_revision[] = "0.0";
 #define CSRF_CHUNKED_ONLY 1
 /* div */
 #define CSRF_RAND_SIZE 10
+#define CSRF_IDDELIM "#"
+#define CSRF_DEFAULT_TIMEOUT 600
 
 // env variable to read id from
 #define CSRF_ATTRIBUTE "CSRF_ATTRIBUTE"
@@ -86,7 +88,8 @@ static const char g_revision[] = "0.0";
  * server configuration
  */
 #define CSRF_FUNC_FLAGS_SCRIPT     0x01
-#define CSRF_FUNC_FLAGS_KEY        0x10
+#define CSRF_FUNC_FLAGS_KEY        0x02
+#define CSRF_FUNC_FLAGS_TMO        0x04
 
 typedef struct {
   int flags;
@@ -97,6 +100,7 @@ typedef struct {
   int sec_len;
   unsigned char key[EVP_MAX_KEY_LENGTH];
   char *path2script;
+  apr_time_t timeout;
 } csrf_srv_config_t;
 
 typedef struct {
@@ -465,24 +469,56 @@ failed:
 }
 
 /**
+ * Returns this id string for this request
+ */
+static char *csrf_idstr(request_rec *r) {
+  const char *csrf_att = apr_table_get(r->subprocess_env, CSRF_ATTRIBUTE);
+  return apr_pstrdup(r->pool, csrf_att);
+}
+
+/**
  * Generate an id which contains defined data from the
  * request header if available and a timestamp.
  * Then encrypt the id with a predefined or random
  * secret.
  */
 static char *csrf_create_id(request_rec *r) {
-  const char *csrf_att = apr_table_get(r->subprocess_env, CSRF_ATTRIBUTE);
+  char *csrf_att = csrf_idstr(r);
   char *id = apr_pstrcat(r->pool,
-                   apr_psprintf(r->pool, "%"APR_TIME_T_FMT"", r->request_time),
-                   "#",
-                   csrf_att,
-                   NULL);
+                         apr_psprintf(r->pool, "%"APR_TIME_T_FMT"", r->request_time),
+                         CSRF_IDDELIM,
+                         csrf_att,
+                         NULL);
   return csrf_enc64(r, id);
 }
 
-static int csrf_validate_id(request_rec *r, const char *id) {
-  // FIXME: implement verification
-  return 1;
+/**
+ * Validates the received id.
+ * @return 1 on success
+ */
+static int csrf_validate_id(request_rec *r, const char *encid) {
+  csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
+  char *valid_csrf_att = csrf_idstr(r);
+  char *id = csrf_dec64(r, encid);
+  char *csrf_att = strstr(id, CSRF_IDDELIM);
+  if(csrf_att) {
+    apr_time_t request_time;
+    csrf_att[0] = '\0';
+    csrf_att++;
+    request_time = apr_atoi64(id);
+    if((request_time + sconf->timeout) > r->request_time) {
+      if(strcmp(valid_csrf_att, csrf_att) == 0) {
+        return 1;
+      } else {
+        // TODO invalid/or changed id (log this event)
+      }
+    } else {
+      // TODO expired (log this event)
+    }
+  } else {
+    // invalid string (log this event?)
+  }
+  return 0;
 }
 
 /**
@@ -912,6 +948,7 @@ static void *csrf_srv_config_create(apr_pool_t *p, server_rec *s) {
   sconf->id = apr_pstrdup(p, CSRF_QUERYID);
   sconf->enabled = -1;
   sconf->path2script = apr_pstrdup(p, "/csrf.js?000");
+  sconf->timeout = apr_time_from_sec(CSRF_DEFAULT_TIMEOUT);
   return sconf;
 }
 
@@ -942,6 +979,13 @@ static void *csrf_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
   } else {
     m->path2script = b->path2script;
   }
+  if(o->flags & CSRF_FUNC_FLAGS_TMO) {
+    m->timeout = o->timeout;
+    m->flags |= CSRF_FUNC_FLAGS_TMO;
+  } else {
+    m->timeout = b->timeout;
+  }
+
   return m;
 }
 
@@ -972,6 +1016,7 @@ static const command_rec csrf_config_cmds[] = {
   // TODO: specify action (log, deny, off) insted of on/off only
   // TODO: directive to override CSRF_QUERYID
   // TODO: per server/location directive to define path2script
+  // TODO: configure timeout
   AP_INIT_FLAG("CSRF_Enable", csrf_enable_cmd, NULL,
                RSRC_CONF|ACCESS_CONF,
                "CSRF_Enable 'on'|'off', enables the module. Default is 'on'."),
