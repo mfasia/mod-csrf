@@ -523,18 +523,23 @@ static int csrf_validate_id(request_rec *r, const char *encid, char **msg) {
 }
 
 static int csrf_referer_check(request_rec *r) {
-  const char *referer = apr_table_get(r->headers_in, "Referer");
-  const char *host = apr_table_get(r->headers_in, "Host");
-  if(referer && host) {
-    apr_uri_t parsed_uri_r;
-    apr_uri_t parsed_uri_h;
-    host = apr_pstrcat(r->pool, "http://", host, NULL);
-    if(apr_uri_parse(r->pool, referer, &parsed_uri_r) == APR_SUCCESS &&
-       apr_uri_parse(r->pool, host, &parsed_uri_h) == APR_SUCCESS) {
-      if(parsed_uri_r.hostname &&
-         parsed_uri_h.hostname &&
-         strcmp(parsed_uri_r.hostname, parsed_uri_h.hostname) == 0) {
-        return 1;
+  csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
+  if(sconf->referer_check == 0) {
+    return 1;
+  } else {
+    const char *referer = apr_table_get(r->headers_in, "Referer");
+    const char *host = apr_table_get(r->headers_in, "Host");
+    if(referer && host) {
+      apr_uri_t parsed_uri_r;
+      apr_uri_t parsed_uri_h;
+      host = apr_pstrcat(r->pool, "http://", host, NULL);
+      if(apr_uri_parse(r->pool, referer, &parsed_uri_r) == APR_SUCCESS &&
+         apr_uri_parse(r->pool, host, &parsed_uri_h) == APR_SUCCESS) {
+        if(parsed_uri_r.hostname &&
+           parsed_uri_h.hostname &&
+           strcmp(parsed_uri_r.hostname, parsed_uri_h.hostname) == 0) {
+          return 1;
+        }
       }
     }
   }
