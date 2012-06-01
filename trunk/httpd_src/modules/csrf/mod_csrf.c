@@ -101,6 +101,7 @@ typedef struct {
   unsigned char key[EVP_MAX_KEY_LENGTH];
   char *path2script;
   apr_time_t timeout;
+  int referer_check;
 } csrf_srv_config_t;
 
 typedef struct {
@@ -521,6 +522,25 @@ static int csrf_validate_id(request_rec *r, const char *encid, char **msg) {
   return 0;
 }
 
+static int csrf_referer_check(request_rec *r) {
+  const char *referer = apr_table_get(r->headers_in, "Referer");
+  const char *host = apr_table_get(r->headers_in, "Host");
+  if(referer && host) {
+    apr_uri_t parsed_uri_r;
+    apr_uri_t parsed_uri_h;
+    host = apr_pstrcat(r->pool, "http://", host, NULL);
+    if(apr_uri_parse(r->pool, referer, &parsed_uri_r) == APR_SUCCESS &&
+       apr_uri_parse(r->pool, host, &parsed_uri_h) == APR_SUCCESS) {
+      if(parsed_uri_r.hostname &&
+         parsed_uri_h.hostname &&
+         strcmp(parsed_uri_r.hostname, parsed_uri_h.hostname) == 0) {
+        return 1;
+      }
+    }
+  }
+  return 0;
+}
+
 /**
  * Verifies that a valid csrf request id could be found
  *
@@ -878,7 +898,12 @@ static int csrf_fixup(request_rec * r) {
       }
       if(!csrf_validate_req_id(r, tl, idheader, &msg)) {
         ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r,
-                      CSRF_LOG_PFX(000)"request denied, %s", msg ? msg : "");
+                      CSRF_LOG_PFX(020)"request denied, %s", msg ? msg : "");
+        return HTTP_FORBIDDEN;
+      }
+      if(!csrf_referer_check(r)) {
+        ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r,
+                      CSRF_LOG_PFX(021)"request denied, %s", msg ? msg : "");
         return HTTP_FORBIDDEN;
       }
     }
@@ -958,6 +983,7 @@ static void *csrf_srv_config_create(apr_pool_t *p, server_rec *s) {
   sconf->enabled = -1;
   sconf->path2script = apr_pstrdup(p, "/csrf.js");
   sconf->timeout = apr_time_from_sec(CSRF_DEFAULT_TIMEOUT);
+  sconf->referer_check = -1;
   return sconf;
 }
 
@@ -994,7 +1020,11 @@ static void *csrf_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
   } else {
     m->timeout = b->timeout;
   }
-
+  if(o->referer_check != -1) {
+    m->referer_check = o->referer_check;
+  } else {
+    m->referer_check = b->referer_check;
+  }
   return m;
 }
 
@@ -1026,6 +1056,7 @@ static const command_rec csrf_config_cmds[] = {
   // TODO: directive to override CSRF_QUERYID
   // TODO: per server/location directive to define path2script
   // TODO: configure timeout
+  // TODO: enable referer check
   AP_INIT_FLAG("CSRF_Enable", csrf_enable_cmd, NULL,
                RSRC_CONF|ACCESS_CONF,
                "CSRF_Enable 'on'|'off', enables the module. Default is 'on'."),

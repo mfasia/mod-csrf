@@ -51,7 +51,7 @@ DefaultType             text/plain
 AddType                 text/html .shtml
 AddOutputFilter         INCLUDES .shtml
 
-LogFormat               "%h %l %u %t \"%r\" %>s %{content-length}i %b \"%{User-Agent}i\" %T id=%{UNIQUE_ID}e %{CSRF_ATTRIBUTE}e %{csrfpId}i #%P"
+LogFormat               "%h %l %u %t \"%r\" %>s %{content-length}i %b \"%{User-Agent}i\" \"%{Referer}i\" %T id=%{UNIQUE_ID}e %{CSRF_ATTRIBUTE}e %{csrfpId}i #%P"
 
 LogLevel                warn
 ErrorLog                ##ROOT##/logs/error_log
@@ -90,6 +90,7 @@ Listen                  127.0.0.1:##PORT_BASE##
    </Proxy>
 
    # set a user tracking cookie which shall be part of the csrf id
+   QS_SessionKey                        1234567890abcdef
    QS_UserTrackingCookieName            csrfuid
    <Location />
       SetEnvIfPlus Host (.*)            CSRF_ATTRIBUTE=$1
