@@ -496,7 +496,7 @@ static char *csrf_create_id(request_rec *r) {
  * Validates the received id.
  * @return 1 on success
  */
-static int csrf_validate_id(request_rec *r, const char *encid) {
+static int csrf_validate_id(request_rec *r, const char *encid, char **msg) {
   csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
   char *valid_csrf_att = csrf_idstr(r);
   char *id = csrf_dec64(r, encid);
@@ -510,13 +510,13 @@ static int csrf_validate_id(request_rec *r, const char *encid) {
       if(strcmp(valid_csrf_att, csrf_att) == 0) {
         return 1;
       } else {
-        // TODO invalid/or changed id (log this event)
+        *msg = apr_psprintf(r->pool, "invalid id (%s instead of %s)", csrf_att, valid_csrf_att);
       }
     } else {
-      // TODO expired (log this event)
+      *msg = apr_psprintf(r->pool, "expired id");
     }
   } else {
-    // invalid string (log this event?)
+    *msg = apr_psprintf(r->pool, "invalid id format or signature");
   }
   return 0;
 }
@@ -541,7 +541,7 @@ static int csrf_validate_req_id(request_rec *r, apr_table_t *tl,
     csrfid = idheader;
   }
   if(csrfid != NULL) {
-    return csrf_validate_id(r, csrfid);
+    return csrf_validate_id(r, csrfid, msg);
   }
   *msg = apr_psprintf(r->pool, "no '%s' parameter in request", sconf->id);
   return 0;
@@ -620,12 +620,20 @@ static csrf_req_ctx *csrf_get_rctx(request_rec *r) {
   if(rctx == NULL) {
     csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
     csrf_dir_config_t *dconf = ap_get_module_config(r->per_dir_config, &csrf_module);
+    char time_string[32];
+    time_t tm = time(NULL);
+    struct tm *ptr = localtime(&tm);
+
     rctx = apr_pcalloc(r->pool, sizeof(csrf_req_ctx));
     rctx->state = CSRF_RES_NEW;
     rctx->search = NULL;
     rctx->body_window = apr_pcalloc(r->pool, 2*CSRF_WIN+1);
     rctx->body_window[0] = '\0';
-    // TODO: better to inject the id into the js file than the html doc (better protection from being fetched by a script)
+
+    strftime(time_string, sizeof(time_string), "%m%d", ptr); // prevent browser caching
+
+    // TODO: better to inject the id into the js file than the html doc (better protection from
+    //       being fetched by a script), or do both (two parts)
     rctx->method = apr_psprintf(r->pool, "<script type=\"text/javascript\">\n"
                                 "<!--\ncsrfInsert(\"%s\", \"%s\");\n"
                                 "//-->\n"
@@ -633,9 +641,10 @@ static csrf_req_ctx *csrf_get_rctx(request_rec *r) {
                                 sconf->id,
                                 csrf_create_id(r));
     rctx->script = apr_psprintf(r->pool, "<script language=\"JavaScript\""
-                               " src=\"%s\" type=\"text/javascript\">"
+                               " src=\"%s?i=%s\" type=\"text/javascript\">"
                                 "</script>\n",
-                                dconf->path2script ? dconf->path2script : sconf->path2script);
+                                dconf->path2script ? dconf->path2script : sconf->path2script,
+                                time_string);
     rctx->pool = NULL;
     ap_set_module_config(r->request_config, &csrf_module, rctx);
   }
@@ -947,7 +956,7 @@ static void *csrf_srv_config_create(apr_pool_t *p, server_rec *s) {
   sconf->ignore_pattern = ap_pregcomp(p, CSRF_IGNORE_PATTERN, AP_REG_ICASE);
   sconf->id = apr_pstrdup(p, CSRF_QUERYID);
   sconf->enabled = -1;
-  sconf->path2script = apr_pstrdup(p, "/csrf.js?000");
+  sconf->path2script = apr_pstrdup(p, "/csrf.js");
   sconf->timeout = apr_time_from_sec(CSRF_DEFAULT_TIMEOUT);
   return sconf;
 }
