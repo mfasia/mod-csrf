@@ -74,7 +74,7 @@ Listen                  127.0.0.1:##PORT_BASE##
    TransferLog            ##ROOT##/logs/access_log
 
    CSRF_Passphrase        HN_gVo6FXFj0
-
+   ErrorDocument          403 /error/403.html
 
    <Location /status>
       SetHandler server-status

@@ -68,6 +68,7 @@ static const char g_revision[] = "0.0";
 
 #define CSRF_IGNORE_PATTERN ".*(jpg)|(jpeg)|(gif)|(png)|(js)|(css)$"
 #define CSRF_IGNORE_CACHE "mod_csrf::ignore"
+#define CSRF_IGNORE "CSRF_IGNORE"
 
 #define CSRF_QUERYID "csrfpId"
 #define CSRF_WIN 8
@@ -265,6 +266,15 @@ static int csrf_token64_decode(char *bufplain, const char *bufcoded) {
   return csrf_token64_decode_binary((unsigned char *) bufplain, bufcoded);
 }
 
+static const char *csrf_get_uniqueid(request_rec *r) {
+  // TODO: requires mod_unique_id (write error message at startup if it has not been loaded)
+  const char *id = apr_table_get(r->subprocess_env, "UNIQUE_ID");
+  if(id == NULL) {
+    id = apr_pstrdup(r->pool, "-");
+  }
+  return id;
+}
+
 /*
  * Similar to standard strstr() but case insensitive and lenght limitation
  * (char which is not 0 terminated).
@@ -343,7 +353,10 @@ static int csrf_ignore_req(request_rec *r) {
     // cache: check regex only once
     return 1;
   }
-  // TODO: ignore by env variable
+  if(apr_table_get(r->subprocess_env, CSRF_IGNORE)) {
+    // ignore by env variable
+    return 1;
+  }
   if(r->parsed_uri.path) {
     const char *path = strrchr(r->parsed_uri.path, '/'); // faster than match against a long string
     if(path == NULL) {
@@ -352,7 +365,7 @@ static int csrf_ignore_req(request_rec *r) {
     if(ap_regexec(sconf->ignore_pattern, path, 0, NULL, 0) == 0) {
       apr_table_set(r->notes, CSRF_IGNORE_CACHE, "i");
       ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
-                    CSRF_LOGD_PFX"ignores request '%s'", r->parsed_uri.path);
+                    CSRF_LOGD_PFX"ignores request '%s' by pattern", r->parsed_uri.path);
       return 1;
     }
   }
@@ -422,7 +435,7 @@ static char *csrf_dec64(request_rec *r, const char *str) {
  failed:
   EVP_CIPHER_CTX_cleanup(&cipher_ctx);
   ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_INFO, 0, r,
-                CSRF_LOG_PFX(010)"Failed to decrypt data.");
+                CSRF_LOG_PFX(010)"Failed to decrypt data, id=%s", csrf_get_uniqueid(r));
   return "";
 }
 
@@ -465,7 +478,7 @@ static char *csrf_enc64(request_rec *r, const char *str) {
 failed:
   EVP_CIPHER_CTX_cleanup(&cipher_ctx);
   ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_INFO, 0, r,
-                CSRF_LOG_PFX(011)"Failed to encrypt data.");
+                CSRF_LOG_PFX(011)"Failed to encrypt data, id=%s", csrf_get_uniqueid(r));
   return "";
 }
 
@@ -522,6 +535,15 @@ static int csrf_validate_id(request_rec *r, const char *encid, char **msg) {
   return 0;
 }
 
+/**
+ * Compares the hostname within the Referer http header against the
+ * host name within the Host http header.
+ * - Direct page access (user has entered the url manually) does not contain a referer header
+ * - User following a link within the page has a matching referer
+ * - Resources within the page have a matching referer header
+ * - Ajax calls within the page have a matching referer header
+ * - Page access from a forein web site does contain a referer which does NOT match
+ */
 static int csrf_referer_check(request_rec *r) {
   csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
   if(sconf->referer_check == 0) {
@@ -529,7 +551,12 @@ static int csrf_referer_check(request_rec *r) {
   } else {
     const char *referer = apr_table_get(r->headers_in, "Referer");
     const char *host = apr_table_get(r->headers_in, "Host");
-    if(referer && host) {
+    if(!referer) {
+      // url entered manually, allow this
+      return 1;
+    }
+    if(host) {
+      // allow only matching requests
       apr_uri_t parsed_uri_r;
       apr_uri_t parsed_uri_h;
       host = apr_pstrcat(r->pool, "http://", host, NULL);
@@ -903,12 +930,14 @@ static int csrf_fixup(request_rec * r) {
       }
       if(!csrf_validate_req_id(r, tl, idheader, &msg)) {
         ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r,
-                      CSRF_LOG_PFX(020)"request denied, %s", msg ? msg : "");
+                      CSRF_LOG_PFX(020)"request denied, %s, id=%s", msg ? msg : "-",
+                      csrf_get_uniqueid(r));
         return HTTP_FORBIDDEN;
       }
       if(!csrf_referer_check(r)) {
         ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r,
-                      CSRF_LOG_PFX(021)"request denied, %s", msg ? msg : "");
+                      CSRF_LOG_PFX(021)"request denied, %s, id=%s", msg ? msg : "-",
+                      csrf_get_uniqueid(r));
         return HTTP_FORBIDDEN;
       }
     }
