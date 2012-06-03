@@ -77,7 +77,7 @@ static const char g_revision[] = "0.0";
 /* div */
 #define CSRF_RAND_SIZE 10
 #define CSRF_IDDELIM "#"
-#define CSRF_DEFAULT_TIMEOUT 600
+#define CSRF_DEFAULT_TIMEOUT 3600
 
 // env variable to read id from
 #define CSRF_ATTRIBUTE "CSRF_ATTRIBUTE"
@@ -1073,6 +1073,21 @@ const char *csrf_enable_cmd(cmd_parms *cmd, void *dcfg, int flag) {
   return NULL;
 }
 
+
+/**
+ * cmd defines the validity persd of the injected id
+ */
+const char *csrf_tmo_cmd(cmd_parms *cmd, void *dcfg, const char *sec) {
+  csrf_srv_config_t *sconf = ap_get_module_config(cmd->server->module_config, &csrf_module);
+  sconf->timeout = atoi(sec);
+  if(sconf->timeout <= 0) {
+    return apr_psprintf(cmd->pool, "%s: requires numeric values greater than 0",
+                        cmd->directive->directive);
+  }
+  sconf->flags |= CSRF_FUNC_FLAGS_TMO;
+  return NULL;
+}
+
 /* CSRF_Passphrase */
 const char *csrf_pwd_cmd(cmd_parms *cmd, void *dcfg, const char *pwd) {
   csrf_srv_config_t *sconf = ap_get_module_config(cmd->server->module_config, &csrf_module);
@@ -1089,7 +1104,6 @@ static const command_rec csrf_config_cmds[] = {
   // TODO: specify action (log, deny, off) insted of on/off only
   // TODO: directive to override CSRF_QUERYID
   // TODO: per server/location directive to define path2script
-  // TODO: configure timeout
   // TODO: enable referer check
   AP_INIT_FLAG("CSRF_Enable", csrf_enable_cmd, NULL,
                RSRC_CONF|ACCESS_CONF,
@@ -1098,6 +1112,10 @@ static const command_rec csrf_config_cmds[] = {
                 RSRC_CONF,
                 "CSRF_Passphrase <string>, used for 'csrfpId' encryption."
                 " Default is a non-persistent random passphrase."),
+  AP_INIT_TAKE1("CSRF_Timeout", csrf_tmo_cmd, NULL,
+                RSRC_CONF,
+                "CSRF_Timeout <seconds>, the validity period of the csrf id."
+                " Default are 3600 seconds."),
   { NULL }
 };
 
