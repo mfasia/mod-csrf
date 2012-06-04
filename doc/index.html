@@ -59,8 +59,8 @@ The mod_csrf project implements protection measurements against
 <b>cross-site request forgery (CSRF)</b> attacks. The project provides two components:
 <ul>
 <li>A JavaScript which injects a unique (per user/per session) id to HTTP request.</li>
-<li>An Apache module which may be used to verify that HTTP requests do contain this unique id injected by 
-the JavaScript.</li>
+<li>An Apache module which may be used to verify that HTTP requests do contain this unique id 
+injected by the JavaScript.</li>
 </ul>
   </p>
 
@@ -68,6 +68,38 @@ the JavaScript.</li>
 mod_csrf is an open source software licensed under the <a href="LICENSE.txt">GNU Lesser General Public License</a>.
 Downloads are handled by <a href="http://sourceforge.net/projects/mod-csrf/">SourceForge.net</a>.
   </p>
+
+
+
+
+<h2>Module Directives</h2>
+<ul>
+<li>
+<code>CSRF_Enable 'on'|'off'</code>, enables the module. Default is 'on'.
+</li>
+<li>
+<code>CSRF_PassPhrase &lt;string&gt;</code>, used for 'csrfpId' encryption. Default is a non-persistent random passphrase.
+</li>
+<li>
+<code>CSRF_Timeout &lt;seconds&gt;</code>, the validity period of the csrf id. Default is 3600 seconds.
+</li>
+<li>
+<code>CSRF_ScriptPath &lt;path&gt;</code>, URL path to the JavaScript to inject. Default is '/csrf.js'.
+</li>
+</ul>
+
+<h2>Module Variabled</h2>
+<ul>
+<li>
+<code>CSRF_IGNORE</code>
+</li>
+<li>
+<code>CSRF_ATTRIBUTE</code>
+</li>
+<li>
+<code>UNIQUE_ID</code>
+</li>
+</ul>
 
   </td>
   <td>&nbsp;</td>
