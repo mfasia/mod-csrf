@@ -78,6 +78,7 @@ static const char g_revision[] = "0.0";
 #define CSRF_RAND_SIZE 10
 #define CSRF_IDDELIM "#"
 #define CSRF_DEFAULT_TIMEOUT 3600
+#define CSRF_DEFAULT_PATH "/csrf.js"
 
 // env variable to read id from
 #define CSRF_ATTRIBUTE "CSRF_ATTRIBUTE"
@@ -200,10 +201,24 @@ static int csrf_token64_encode_binary(char *encoded,
   return (int)(p - encoded);
 }
 
-static int csrf_token64_encode(char *encoded, const char *string, int len) {
-  return csrf_token64_encode_binary(encoded, (const unsigned char *) string, len);
+/**
+ * Base64-like data encoding
+ *
+ * @param encoded Pre-allocated buffer to write data to
+ * @param buf Data to encode
+ * @param len Length of the data in the paramter buf
+ * @return Lentgh of the encoded string
+ */
+static int csrf_token64_encode(char *encoded, const char *buf, int len) {
+  return csrf_token64_encode_binary(encoded, (const unsigned char *) buf, len);
 }
 
+/**
+ * Determines the max. buffer length required to decode the string
+ *
+ * @param bufcoded String to decode
+ * @return The maximum required buffer length
+ */ 
 static int csrf_token64_decode_len(const char *bufcoded) {
   int nbytesdecoded;
   register const unsigned char *bufin;
@@ -262,6 +277,13 @@ static int csrf_token64_decode_binary(unsigned char *bufplain,
   return nbytesdecoded;
 }
 
+/**
+ * Base64-like string decoding
+ *
+ * @param bufplain Pre allocated string to write decoded data to
+ * @param bufcoded String of the encoded data.
+ * @return Length of bufplain
+ */
 static int csrf_token64_decode(char *bufplain, const char *bufcoded) {
   return csrf_token64_decode_binary((unsigned char *) bufplain, bufcoded);
 }
@@ -1015,7 +1037,7 @@ static void *csrf_srv_config_create(apr_pool_t *p, server_rec *s) {
   sconf->ignore_pattern = ap_pregcomp(p, CSRF_IGNORE_PATTERN, AP_REG_ICASE);
   sconf->id = apr_pstrdup(p, CSRF_QUERYID);
   sconf->enabled = -1;
-  sconf->path2script = apr_pstrdup(p, "/csrf.js");
+  sconf->path2script = apr_pstrdup(p, CSRF_DEFAULT_PATH);
   sconf->timeout = apr_time_from_sec(CSRF_DEFAULT_TIMEOUT);
   sconf->referer_check = -1;
   return sconf;
@@ -1073,6 +1095,18 @@ const char *csrf_enable_cmd(cmd_parms *cmd, void *dcfg, int flag) {
   return NULL;
 }
 
+const char *csrf_path2script_cmd(cmd_parms *cmd, void *dcfg, const char *path) {
+  if(cmd->path) {
+    csrf_dir_config_t *dconf = dcfg;
+    dconf->path2script = apr_pstrdup(cmd->pool, path);
+    dconf->flags |= CSRF_FUNC_FLAGS_SCRIPT;
+  } else {
+    csrf_srv_config_t *sconf = ap_get_module_config(cmd->server->module_config, &csrf_module);
+    sconf->path2script = apr_pstrdup(cmd->pool, path);
+    sconf->flags |= CSRF_FUNC_FLAGS_SCRIPT;
+  }
+  return NULL;
+}
 
 /**
  * cmd defines the validity persd of the injected id
@@ -1103,19 +1137,22 @@ static const command_rec csrf_config_cmds[] = {
   // TODO: add directive do override ignore pattern sconf->ignore_pattern
   // TODO: specify action (log, deny, off) insted of on/off only
   // TODO: directive to override CSRF_QUERYID
-  // TODO: per server/location directive to define path2script
   // TODO: enable referer check
   AP_INIT_FLAG("CSRF_Enable", csrf_enable_cmd, NULL,
                RSRC_CONF|ACCESS_CONF,
                "CSRF_Enable 'on'|'off', enables the module. Default is 'on'."),
-  AP_INIT_TAKE1("CSRF_Passphrase", csrf_pwd_cmd, NULL,
+  AP_INIT_TAKE1("CSRF_PassPhrase", csrf_pwd_cmd, NULL,
                 RSRC_CONF,
-                "CSRF_Passphrase <string>, used for 'csrfpId' encryption."
+                "CSRF_PassPhrase <string>, used for 'csrfpId' encryption."
                 " Default is a non-persistent random passphrase."),
   AP_INIT_TAKE1("CSRF_Timeout", csrf_tmo_cmd, NULL,
                 RSRC_CONF,
                 "CSRF_Timeout <seconds>, the validity period of the csrf id."
-                " Default are 3600 seconds."),
+                " Default is 3600 seconds."),
+  AP_INIT_TAKE1("CSRF_ScriptPath", csrf_path2script_cmd, NULL,
+                RSRC_CONF|ACCESS_CONF,
+                "CSRF_ScriptPath <path>, URL path to the JavaScript to inject."
+                " Default is '"CSRF_DEFAULT_PATH"'."),
   { NULL }
 };
 
