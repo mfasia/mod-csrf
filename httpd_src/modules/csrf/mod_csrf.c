@@ -110,6 +110,7 @@ typedef struct {
   int flags;
   int enabled;                /** enabled by default (-1) or by user (1) */
   char *path2script;
+  int referer_check;
 } csrf_dir_config_t;
 
 typedef enum  {
@@ -142,14 +143,14 @@ static APR_OPTIONAL_FN_TYPE(parp_hp_table) *csrf_parp_hp_table_fn = NULL;
  ***********************************************************************/
 
 static const char csrf_basis_64[] =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_/";
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
 
 /* aaaack but it's fast and const should make it shared text page. */
 static const unsigned char csrf_pr2six[256] = {
     /* ASCII table */
     64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
     64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 63,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 63, 64, 64,
     52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 64, 64, 64, 64, 64, 64,
     64,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
     15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 64, 64, 64, 64, 62,
@@ -202,7 +203,7 @@ static int csrf_token64_encode_binary(char *encoded,
 }
 
 /**
- * Base64-like data encoding
+ * Base64-like data encoding (no "/" or "+"
  *
  * @param encoded Pre-allocated buffer to write data to
  * @param buf Data to encode
@@ -568,7 +569,14 @@ static int csrf_validate_id(request_rec *r, const char *encid, char **msg) {
  */
 static int csrf_referer_check(request_rec *r) {
   csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
-  if(sconf->referer_check == 0) {
+  csrf_dir_config_t *dconf = ap_get_module_config(r->per_dir_config, &csrf_module);
+  int enabled = sconf->referer_check;
+  if(dconf->referer_check != -1) {
+    // dir config may override server default
+    enabled = dconf->referer_check;
+  }
+  if(enabled == 0) {
+    // disabled by configuration
     return 1;
   } else {
     const char *referer = apr_table_get(r->headers_in, "Referer");
@@ -1011,6 +1019,7 @@ static void *csrf_dir_config_create(apr_pool_t *p, char *d) {
   csrf_dir_config_t *dconf = apr_pcalloc(p, sizeof(csrf_dir_config_t));
   dconf->enabled = -1;
   dconf->path2script = NULL; // use server config by default
+  dconf->referer_check = -1;
   return dconf;
 }
 
@@ -1028,6 +1037,11 @@ static void *csrf_dir_config_merge(apr_pool_t *p, void *basev, void *addv) {
     m->flags |= CSRF_FUNC_FLAGS_SCRIPT;
   } else {
     m->path2script = b->path2script;
+  }
+  if(o->referer_check != -1) {
+    m->referer_check = o->referer_check;
+  } else {
+    m->referer_check = b->referer_check;
   }
   return m;
 }
@@ -1095,6 +1109,17 @@ const char *csrf_enable_cmd(cmd_parms *cmd, void *dcfg, int flag) {
   return NULL;
 }
 
+const char *csrf_enable_referer_cmd(cmd_parms *cmd, void *dcfg, int flag) {
+  if(cmd->path) {
+    csrf_srv_config_t *conf = dcfg;
+    conf->referer_check = flag;
+  } else {
+    csrf_srv_config_t *conf = ap_get_module_config(cmd->server->module_config, &csrf_module);
+    conf->referer_check = flag;
+  }
+  return NULL;
+}
+
 const char *csrf_path2script_cmd(cmd_parms *cmd, void *dcfg, const char *path) {
   if(cmd->path) {
     csrf_dir_config_t *dconf = dcfg;
@@ -1141,6 +1166,10 @@ static const command_rec csrf_config_cmds[] = {
   AP_INIT_FLAG("CSRF_Enable", csrf_enable_cmd, NULL,
                RSRC_CONF|ACCESS_CONF,
                "CSRF_Enable 'on'|'off', enables the module. Default is 'on'."),
+  AP_INIT_FLAG("CSRF_EnableReferer", csrf_enable_referer_cmd, NULL,
+               RSRC_CONF|ACCESS_CONF,
+               "CSRF_EnableReferer 'on'|'off', enables the referer header check."
+               " Default is 'on'."),
   AP_INIT_TAKE1("CSRF_PassPhrase", csrf_pwd_cmd, NULL,
                 RSRC_CONF,
                 "CSRF_PassPhrase <string>, used for 'csrfpId' encryption."

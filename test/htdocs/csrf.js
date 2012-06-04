@@ -58,13 +58,24 @@ function addToNodes(paramName, csrfId) {
 	while(types[i][ai] != null) {
 	  var attribute = nodes[j].getAttribute(types[i][ai]);
 	  if(attribute != null) {
-	    if(attribute.indexOf("?") == -1) {
-	      var newattribute = attribute + "?" + paramName + "=" + csrfId;
-	      nodes[j].setAttribute(types[i][ai], newattribute);
-	    } else {
-	      var newattribute = attribute + "&" + paramName + "=" + csrfId;
-	      nodes[j].setAttribute(types[i][ai], newattribute);
+	    var fragment = null;
+	    var newattribute;
+	    if(attribute.indexOf("#") != -1) {
+	      // extract the fragment and append it afterwards
+	      fragment = attribute.substr(attribute.indexOf("#"));
+	      attribute = attribute.substr(0, attribute.indexOf("#") - 1);
 	    }
+	    if(attribute.indexOf("?") == -1) {
+	      // first query parameter
+	      newattribute = attribute + "?" + paramName + "=" + csrfId;
+	    } else {
+	      // append to existing query paramter
+	      newattribute = attribute + "&" + paramName + "=" + csrfId;
+	    }
+	    if(fragment) {
+	      newattribute = newattribute + fragment;
+	    }
+	    nodes[j].setAttribute(types[i][ai], newattribute);
 	  }
 	  ai++;
 	}
