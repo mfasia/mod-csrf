@@ -11,6 +11,10 @@ PORT_BASE=`expr ${CUID} + 5400`
 PORT_BASE1=`expr ${PORT_BASE} + 1`
 
 mkdir -p logs
+mkdir -p htdocs/doc
+rm htdocs/doc/*
+ln -s `pwd`/../doc/*.html htdocs/doc/
+ln -s `pwd`/../doc/*jpg htdocs/doc/
 
 FILES="conf/httpd.conf"
 for E in $FILES; do
