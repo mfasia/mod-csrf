@@ -77,19 +77,26 @@ Downloads are handled by <a href="http://sourceforge.net/projects/mod-csrf/">Sou
 <h2>Module Directives</h2>
 <ul>
 <li>
-<code>CSRF_Enable 'on'|'off'</code>, enables the module. Default is 'on'.
+<code>CSRF_Enable 'on'|'off'</code> </br>
+Enables or disables the module on a per server or location basis. Default is 'on'.
 </li>
 <li>
-<code>CSRF_EnableReferer 'on'|'off'</code>, enables the referer header check. Default is 'on'.
+<code>CSRF_EnableReferer 'on'|'off'</code> </br>
+mod_csrf may deny requests whose HTTP <i>Host</i> and <i>Referer</i> header do not contain the 
+very same hostname. This referer header check is enabled by default.
 </li>
 <li>
-<code>CSRF_PassPhrase &lt;string&gt;</code>, used for to encrypt the mod_csrf request id. Default is a non-persistent random passphrase.
+<code>CSRF_PassPhrase &lt;string&gt;</code> </br>
+Used for to encrypt the mod_csrf request id. Default is a non-persistent random passphrase.
 </li>
 <li>
-<code>CSRF_Timeout &lt;seconds&gt;</code>, the validity period of the csrf id. Default is 3600 seconds.
+<code>CSRF_Timeout &lt;seconds&gt;</code> </br>
+The validity period of the csrf request id injected by the JavaScript. Default is 3600 seconds.
 </li>
 <li>
-<code>CSRF_ScriptPath &lt;path&gt;</code>, URL path to the JavaScript to inject. Default is '/csrf.js'.
+<code>CSRF_ScriptPath &lt;path&gt;</code> </br>
+URL path to the JavaScript to include to each HTML which is then used to inject the mod_csrf 
+request id. Default path is '/csrf.js'.
 </li>
 </ul>
 

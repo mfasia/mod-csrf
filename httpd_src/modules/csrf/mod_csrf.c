@@ -615,10 +615,8 @@ static int csrf_validate_req_id(request_rec *r, apr_table_t *tl,
                                 const char *idheader, char **msg) {
   csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
   const char *csrfid = apr_table_get(tl, sconf->id);
-  if(csrfid != NULL) {
-    // got query, mod_parp should remove the parameter
-    // TODO: use mod_parp >= 0.11 and remove (delete=1) the parameter
-  } else {
+  if(csrfid == NULL) {
+    // not in query/body: by header? (ajax)
     csrfid = idheader;
   }
   if(csrfid != NULL) {
@@ -730,6 +728,33 @@ static csrf_req_ctx *csrf_get_rctx(request_rec *r) {
     ap_set_module_config(r->request_config, &csrf_module, rctx);
   }
   return rctx;
+}
+
+/**
+ * mod_parp removes the request id but if it is not active, we have to
+ * remove it from the query on our own
+ */
+static char *csrf_remove_id(request_rec *r, char *arg) {
+  char *newarg = arg;
+  if(arg) {
+    char *search = apr_pstrcat(r->pool, CSRF_QUERYID, "=", NULL);
+    char *id = strstr(arg, search);
+    if(id) {
+      char *end = strchr(id, '&');
+      if(end) {
+        end++;
+      } else {
+        end = &arg[strlen(arg)];
+      }
+      if(id > arg && id[-1] == '&') {
+        // delete delimiter
+        id--;
+      }
+      id[0] = '\0';
+      newarg = apr_pstrcat(r->pool, arg, end, NULL);
+    }
+  }
+  return newarg;
 }
 
 /************************************************************************
@@ -969,6 +994,11 @@ static int csrf_fixup(request_rec * r) {
                       csrf_get_uniqueid(r));
         return HTTP_FORBIDDEN;
       }
+      if(0) {
+        char *uri = csrf_remove_id(r, r->unparsed_uri);
+        r->the_request = csrf_remove_id(r, r->the_request);
+        ap_parse_uri(r, uri);
+      }
     }
   }
   return DECLINED;
@@ -991,6 +1021,8 @@ static int csrf_header_parser(request_rec * r) {
          ap_strcasestr(ct, "multipart/mixed") ||
          ap_strcasestr(ct, "application/json")) {
         apr_table_set(r->subprocess_env, "parp", "mod_csrf");
+        // tells mod_parp (>= 0.12) to remove our request id
+        apr_table_add(r->notes, "PARP_DELETE_PARAM", CSRF_QUERYID);
       }
     }
   }
@@ -1003,7 +1035,7 @@ static int csrf_post_config(apr_pool_t *pconf, apr_pool_t *plog,
   ap_add_version_component(pconf, apr_psprintf(pconf, "mod_csrf/%s", g_revision));
   if(ap_find_linked_module("mod_parp.c") == NULL) {
     ap_log_error(APLOG_MARK, APLOG_WARNING, 0, bs, 
-                 CSRF_LOG_PFX(000)"mod_parp not available");
+                 CSRF_LOG_PFX(001)"mod_parp not available");
     csrf_parp_hp_table_fn = NULL;
   } else {
     csrf_parp_hp_table_fn = APR_RETRIEVE_OPTIONAL_FN(parp_hp_table);
