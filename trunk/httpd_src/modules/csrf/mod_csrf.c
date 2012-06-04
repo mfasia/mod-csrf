@@ -145,7 +145,6 @@ static APR_OPTIONAL_FN_TYPE(parp_hp_table) *csrf_parp_hp_table_fn = NULL;
 static const char csrf_basis_64[] =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
 
-/* aaaack but it's fast and const should make it shared text page. */
 static const unsigned char csrf_pr2six[256] = {
     /* ASCII table */
     64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
@@ -203,7 +202,7 @@ static int csrf_token64_encode_binary(char *encoded,
 }
 
 /**
- * Base64-like data encoding (no "/" or "+"
+ * Base64-like data encoding (no "/" nor "+")
  *
  * @param encoded Pre-allocated buffer to write data to
  * @param buf Data to encode
@@ -1172,16 +1171,16 @@ static const command_rec csrf_config_cmds[] = {
                " Default is 'on'."),
   AP_INIT_TAKE1("CSRF_PassPhrase", csrf_pwd_cmd, NULL,
                 RSRC_CONF,
-                "CSRF_PassPhrase <string>, used for 'csrfpId' encryption."
-                " Default is a non-persistent random passphrase."),
+                "CSRF_PassPhrase <string>, used for the encryption of the mod_csrf"
+                " request id. Default is a non-persistent random passphrase."),
   AP_INIT_TAKE1("CSRF_Timeout", csrf_tmo_cmd, NULL,
                 RSRC_CONF,
                 "CSRF_Timeout <seconds>, the validity period of the csrf id."
                 " Default is 3600 seconds."),
   AP_INIT_TAKE1("CSRF_ScriptPath", csrf_path2script_cmd, NULL,
                 RSRC_CONF|ACCESS_CONF,
-                "CSRF_ScriptPath <path>, URL path to the JavaScript to inject."
-                " Default is '"CSRF_DEFAULT_PATH"'."),
+                "CSRF_ScriptPath <path>, URL path to the JavaScript to inject the"
+                " mod_csrf request id. Default is '"CSRF_DEFAULT_PATH"'."),
   { NULL }
 };
 
