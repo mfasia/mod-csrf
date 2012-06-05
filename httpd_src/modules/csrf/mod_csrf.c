@@ -730,33 +730,6 @@ static csrf_req_ctx *csrf_get_rctx(request_rec *r) {
   return rctx;
 }
 
-/**
- * mod_parp removes the request id but if it is not active, we have to
- * remove it from the query on our own
- */
-static char *csrf_remove_id(request_rec *r, char *arg) {
-  char *newarg = arg;
-  if(arg) {
-    char *search = apr_pstrcat(r->pool, CSRF_QUERYID, "=", NULL);
-    char *id = strstr(arg, search);
-    if(id) {
-      char *end = strchr(id, '&');
-      if(end) {
-        end++;
-      } else {
-        end = &arg[strlen(arg)];
-      }
-      if(id > arg && id[-1] == '&') {
-        // delete delimiter
-        id--;
-      }
-      id[0] = '\0';
-      newarg = apr_pstrcat(r->pool, arg, end, NULL);
-    }
-  }
-  return newarg;
-}
-
 /************************************************************************
  * handlers
  ***********************************************************************/
@@ -994,11 +967,6 @@ static int csrf_fixup(request_rec * r) {
                       csrf_get_uniqueid(r));
         return HTTP_FORBIDDEN;
       }
-      if(0) {
-        char *uri = csrf_remove_id(r, r->unparsed_uri);
-        r->the_request = csrf_remove_id(r, r->the_request);
-        ap_parse_uri(r, uri);
-      }
     }
   }
   return DECLINED;
@@ -1014,17 +982,23 @@ static int csrf_fixup(request_rec * r) {
 static int csrf_header_parser(request_rec * r) {
   if(ap_is_initial_req(r)) {
     /* enables parameter parser */
-    const char *ct = apr_table_get(r->headers_in, "Content-Type");
-    if(ct && csrf_enabled(r) && !csrf_ignore_req(r)) {
-      if(ap_strcasestr(ct, "application/x-www-form-urlencoded") ||
-         ap_strcasestr(ct, "multipart/form-data") ||
-         ap_strcasestr(ct, "multipart/mixed") ||
-         ap_strcasestr(ct, "application/json")) {
-        apr_table_set(r->subprocess_env, "parp", "mod_csrf");
-        // tells mod_parp (>= 0.12) to remove our request id
-        apr_table_add(r->notes, "PARP_DELETE_PARAM", CSRF_QUERYID);
+    if(csrf_enabled(r) && !csrf_ignore_req(r)) {
+      const char *ct = apr_table_get(r->headers_in, "Content-Type");
+      if(ct) {
+        // enable parp for certain content types (parser available)
+        if(ap_strcasestr(ct, "application/x-www-form-urlencoded") ||
+           ap_strcasestr(ct, "multipart/form-data") ||
+           ap_strcasestr(ct, "multipart/mixed") ||
+           ap_strcasestr(ct, "application/json")) {
+          apr_table_add(r->subprocess_env, "parp", "mod_csrf");
+        }
+      } else if(r->args) {
+        // no content type (no body), process query only
+        apr_table_add(r->subprocess_env, "parp", "mod_csrf");
       }
     }
+    // tells mod_parp (>= 0.12) to remove our request id
+    apr_table_add(r->notes, "PARP_DELETE_PARAM", CSRF_QUERYID);
   }
   return DECLINED;
 }
