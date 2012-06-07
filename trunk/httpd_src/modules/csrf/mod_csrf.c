@@ -93,10 +93,17 @@ static const char g_revision[] = "0.0";
 #define CSRF_FUNC_FLAGS_KEY        0x02
 #define CSRF_FUNC_FLAGS_TMO        0x04
 
+typedef enum  {
+  CSRF_ACTION_DENY_DEFAULT = 0,
+  CSRF_ACTION_DENY,
+  CSRF_ACTION_LOG
+} csrf_action_e;
+
 typedef struct {
   int flags;
   ap_regex_t *ignore_pattern; /** path pattern which disables request check */
   int enabled;                /** enabled by default (-1) or by user (1) */
+  csrf_action_e action;
   const char *id;
   unsigned char *sec;
   int sec_len;
@@ -712,7 +719,7 @@ static csrf_req_ctx *csrf_get_rctx(request_rec *r) {
     strftime(time_string, sizeof(time_string), "%m%d", ptr); // prevent browser caching
 
     // TODO: better to inject the id into the js file than the html doc (better protection from
-    //       being fetched by a script), or do both (two parts)
+    //       being fetched by a script), or do both (two parts)???
     rctx->method = apr_psprintf(r->pool, "<script type=\"text/javascript\">\n"
                                 "<!--\ncsrfInsert(\"%s\", \"%s\");\n"
                                 "//-->\n"
@@ -957,15 +964,21 @@ static int csrf_fixup(request_rec * r) {
       }
       if(!csrf_validate_req_id(r, tl, idheader, &msg)) {
         ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r,
-                      CSRF_LOG_PFX(020)"request denied, %s, id=%s", msg ? msg : "-",
+                      CSRF_LOG_PFX(020)"request denied, %s, action=%s, id=%s", msg ? msg : "-",
+                      sconf->action == CSRF_ACTION_LOG ? "log" : "deny",
                       csrf_get_uniqueid(r));
-        return HTTP_FORBIDDEN;
+        if(sconf->action != CSRF_ACTION_LOG) {
+          return HTTP_FORBIDDEN;
+        }
       }
       if(!csrf_referer_check(r)) {
         ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r,
-                      CSRF_LOG_PFX(021)"request denied, %s, id=%s", msg ? msg : "-",
+                      CSRF_LOG_PFX(021)"request denied, %s, action=%s, id=%s", msg ? msg : "-",
+                      sconf->action == CSRF_ACTION_LOG ? "log" : "deny",
                       csrf_get_uniqueid(r));
-        return HTTP_FORBIDDEN;
+        if(sconf->action != CSRF_ACTION_LOG) {
+          return HTTP_FORBIDDEN;
+        }
       }
     }
   }
@@ -1059,6 +1072,7 @@ static void *csrf_srv_config_create(apr_pool_t *p, server_rec *s) {
   sconf->path2script = apr_pstrdup(p, CSRF_DEFAULT_PATH);
   sconf->timeout = apr_time_from_sec(CSRF_DEFAULT_TIMEOUT);
   sconf->referer_check = -1;
+  sconf->action = CSRF_ACTION_DENY_DEFAULT;
   return sconf;
 }
 
@@ -1100,6 +1114,11 @@ static void *csrf_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
   } else {
     m->referer_check = b->referer_check;
   }
+  if(o->action != CSRF_ACTION_DENY_DEFAULT) {
+    m->action = o->action;
+  } else {
+    m->action = b->action;
+  }
   return m;
 }
 
@@ -1121,6 +1140,19 @@ const char *csrf_enable_referer_cmd(cmd_parms *cmd, void *dcfg, int flag) {
   } else {
     csrf_srv_config_t *conf = ap_get_module_config(cmd->server->module_config, &csrf_module);
     conf->referer_check = flag;
+  }
+  return NULL;
+}
+
+const char *csrf_action_cmd(cmd_parms *cmd, void *dcfg, const char *action) {
+  csrf_srv_config_t *sconf = ap_get_module_config(cmd->server->module_config, &csrf_module);
+  if(strcasecmp(action, "deny") == 0) {
+    sconf->action = CSRF_ACTION_DENY;
+  } else if(strcasecmp(action, "log") == 0) {
+    sconf->action = CSRF_ACTION_LOG;
+  } else {
+    return apr_psprintf(cmd->pool, "%s: invalid action (neither 'deny' nor 'log')",
+                        cmd->directive->directive);
   }
   return NULL;
 }
@@ -1175,6 +1207,10 @@ static const command_rec csrf_config_cmds[] = {
                RSRC_CONF|ACCESS_CONF,
                "CSRF_EnableReferer 'on'|'off', enables the referer header check."
                " Default is 'on'."),
+  AP_INIT_TAKE1("CSRF_Action", csrf_action_cmd, NULL,
+                RSRC_CONF,
+                "CSRF_Action 'deny'|'log', defines the action to take when a request"
+                " does violates the configured rules. Default is 'deny'."),
   AP_INIT_TAKE1("CSRF_PassPhrase", csrf_pwd_cmd, NULL,
                 RSRC_CONF,
                 "CSRF_PassPhrase <string>, used for the encryption of the mod_csrf"
