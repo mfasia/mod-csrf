@@ -1197,7 +1197,6 @@ const char *csrf_pwd_cmd(cmd_parms *cmd, void *dcfg, const char *pwd) {
 
 static const command_rec csrf_config_cmds[] = {
   // TODO: add directive do override ignore pattern sconf->ignore_pattern
-  // TODO: specify action (log, deny, off) insted of on/off only
   // TODO: directive to override CSRF_QUERYID
   // TODO: enable referer check
   AP_INIT_FLAG("CSRF_Enable", csrf_enable_cmd, NULL,
