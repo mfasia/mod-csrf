@@ -74,6 +74,9 @@ Listen                  127.0.0.1:##PORT_BASE##
    ServerName             127.0.0.1
    TransferLog            ##ROOT##/logs/access_log
 
+   <IfDefine logonly>
+   CSRF_Action            log
+   </IfDefine>
    CSRF_Passphrase        HN_gVo6FXFj0
    ErrorDocument          403 /error/403.html
 

@@ -86,6 +86,10 @@ mod_csrf may deny requests whose HTTP <i>Host</i> and <i>Referer</i> header do n
 very same hostname. This referer header check is enabled by default.
 </li>
 <li>
+<code>CSRF_Action 'deny'|'log'</code> </br>
+Defines the action to take when a request does violates the configured rules. Default is 'deny'.
+</li>
+<li>
 <code>CSRF_PassPhrase &lt;string&gt;</code> </br>
 Used for to encrypt the mod_csrf request id. Default is a non-persistent random passphrase.
 </li>
