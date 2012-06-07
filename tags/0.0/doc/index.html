@@ -1,0 +1,143 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+  <head>
+    <title>mod_csrf</title>
+    <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+    <meta name="author" content="Pascal Buchbinder">
+    <meta name="KeyWords" content="Apache Web Server, Open Source Software, AdNovum Informatik, Nevis Security Suite, Cross-site request forgery protection, CSRF" />
+    <link rel="shortcut icon" href="favicon.ico" />
+    <style TYPE="text/css">
+    <!--  
+      body {
+    	background-color: white;
+    	color: black;
+    	font-family: arial, helvetica, verdana, sans-serif;
+    	font-weight: normal;
+    	text-align: left;
+      }
+      a:link    { color: rgb(95,10,15); }
+      a:visited { color:black; }
+      a:focus   { color:black; text-decoration:underline; }
+      a:hover   { color:black; text-decoration:none; }
+      a:active  { color:black; text-decoration:underline; }
+    -->
+    </style>
+  </head>
+
+  <body>
+  <!--
+  mod_csrf - Cross-site request forgery protection module for
+             the Apache web server
+  Copyright (C) 2012 Pascal Buchbinder
+  This library is free software; you can redistribute it and/or
+  modify it under the terms of the GNU Lesser General Public
+  License as published by the Free Software Foundation; either
+  version 2.1 of the License, or (at your option) any later version.
+  
+  This library is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  Lesser General Public License for more details.
+  
+  You should have received a copy of the GNU Lesser General Public
+  License along with this library; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+  -->
+
+<table>
+<tbody>
+<tr>
+  <td colspan="2"><img src="csrf.jpg" alt="mod_csrf"></td>
+  <td>&nbsp;</td>
+</tr>
+<tr>
+  <td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+  <td>
+
+  <p>
+The mod_csrf project implements protection measurements against 
+<b>cross-site request forgery (CSRF)</b> attacks. The project provides two components:
+<ul>
+<li>A JavaScript which injects a unique request (per user/per session) id to HTTP request. The 
+request id is added to evey HTML form, hyperlink ("a" tag by default/list of attributes may be 
+extended), as well as Ajax request.</li>
+<li>An Apache module which may be used to verify that HTTP requests do contain this unique id 
+injected by the JavaScript.</li>
+</ul>
+  </p>
+
+  <p>
+mod_csrf is an open source software licensed under the <a href="LICENSE.txt">GNU Lesser General Public License</a>.
+Downloads are handled by <a href="http://sourceforge.net/projects/mod-csrf/">SourceForge.net</a>.
+  </p>
+
+
+
+
+<h2>Module Directives</h2>
+<ul>
+<li>
+<code>CSRF_Enable 'on'|'off'</code> </br>
+Enables or disables the module on a per server or location basis. Default is 'on'.
+</li>
+<li>
+<code>CSRF_EnableReferer 'on'|'off'</code> </br>
+mod_csrf may deny requests whose HTTP <i>Host</i> and <i>Referer</i> header do not contain the 
+very same hostname. This referer header check is enabled by default.
+</li>
+<li>
+<code>CSRF_Action 'deny'|'log'</code> </br>
+Defines the action to take when a request does violates the configured rules. Default is 'deny'.
+</li>
+<li>
+<code>CSRF_PassPhrase &lt;string&gt;</code> </br>
+Used for to encrypt the mod_csrf request id. Default is a non-persistent random passphrase.
+</li>
+<li>
+<code>CSRF_Timeout &lt;seconds&gt;</code> </br>
+The validity period of the csrf request id injected by the JavaScript. Default is 3600 seconds.
+</li>
+<li>
+<code>CSRF_ScriptPath &lt;path&gt;</code> </br>
+URL path to the JavaScript to include to each HTML which is then used to inject the mod_csrf 
+request id. Default path is '/csrf.js'.
+</li>
+</ul>
+
+<h2>Module Variables</h2>
+<ul>
+<li>
+<code>CSRF_IGNORE</code> </br>
+The module enforces that every request containing arguments (query string or request body 
+parameter) also contains the request id injected by the JavaScript. Somce handler (URL patterns) 
+such as those with the ending <id title=".*(jpg)|(jpeg)|(gif)|(png)|(js)|(css)$">*.jpg, *.png, *.css, etc.</id> 
+are excluded from this rule. You may exclude additional requests by setting this environment using mod_setenvif or 
+<a href="http://opensource.adnovum.ch/mod_setenvifplus/" target="_blank">mod_setenvifplus</a>. </br>
+Example: </br>&nbsp;&nbsp;<code>SetEnviIf Request_URI /startpage.html CSRF_IGNORE=yes</code>
+</li>
+<li>
+<code>CSRF_ATTRIBUTE</code> </br>
+This environment variable defines the content within the request id. It may be set using mod_setenvif 
+or <a href="http://opensource.adnovum.ch/mod_setenvifplus/" target="_blank">mod_setenvifplus</a> and 
+may contain values such as the user name or a session cookie. </br>
+Example: </br>&nbsp;&nbsp;<code>SetEnvIfPlus Remote_User (.*) CSRF_ATTRIBUTE=$1</code>
+</li>
+<li>
+<code>UNIQUE_ID</code> </br>
+A unique request id generated by mod_uniqueid which is (if availabled) used within log 
+messages written by mod_csrf. We recommend to use this id within the transaction log as well. </br>
+Example: </br>&nbsp;&nbsp;<code>LogFormat "%h %l %u %t \"%r\" %&gt;s %b \"%{User-Agent}i\" \"%{Referer}i\" %T <b>id=%{UNIQUE_ID}e</b> %{CSRF_ATTRIBUTE}e #%P"</code>
+</li>
+</ul>
+
+  </td>
+  <td>&nbsp;</td>
+
+</tr>
+</tbody>
+</table>
+<br>
+    <hr>
+<SMALL><SMALL>&copy; 2012, Pascal Buchbinder/Christoph Steigmeier</SMALL></SMALL>
+  </body>
+</html>
