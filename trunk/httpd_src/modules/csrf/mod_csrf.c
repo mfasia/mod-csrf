@@ -25,7 +25,7 @@
 /************************************************************************
  * Version
  ***********************************************************************/
-static const char g_revision[] = "0.0";
+static const char g_revision[] = "0.2";
 
 /************************************************************************
  * Includes
@@ -516,6 +516,9 @@ failed:
  */
 static char *csrf_idstr(request_rec *r) {
   const char *csrf_att = apr_table_get(r->subprocess_env, CSRF_ATTRIBUTE);
+  if(csrf_att == NULL) {
+    return apr_pstrdup(r->pool, "");
+  }
   return apr_pstrdup(r->pool, csrf_att);
 }
 
@@ -621,7 +624,10 @@ static int csrf_referer_check(request_rec *r) {
 static int csrf_validate_req_id(request_rec *r, apr_table_t *tl, 
                                 const char *idheader, char **msg) {
   csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
-  const char *csrfid = apr_table_get(tl, sconf->id);
+  const char *csrfid = NULL;
+  if(tl) {
+    csrfid = apr_table_get(tl, sconf->id);
+  }
   if(csrfid == NULL) {
     // not in query/body: by header? (ajax)
     csrfid = idheader;
@@ -1198,7 +1204,6 @@ const char *csrf_pwd_cmd(cmd_parms *cmd, void *dcfg, const char *pwd) {
 static const command_rec csrf_config_cmds[] = {
   // TODO: add directive do override ignore pattern sconf->ignore_pattern
   // TODO: directive to override CSRF_QUERYID
-  // TODO: enable referer check
   AP_INIT_FLAG("CSRF_Enable", csrf_enable_cmd, NULL,
                RSRC_CONF|ACCESS_CONF,
                "CSRF_Enable 'on'|'off', enables the module. Default is 'on'."),
