@@ -1,0 +1,134 @@
+#
+# mod_csrf - Cross-site request forgery protection module
+#            for the Apache web server
+#
+# Copyright (C) 2012 Christoph Steigmeier, Pascal Buchbinder
+# 
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+# 
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+# 
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+
+ServerName              127.0.0.1
+StartServers            1
+ServerLimit             1
+MinSpareThreads         5
+MaxSpareThreads         16
+ThreadsPerChild         16
+MaxClients              16
+MaxRequestsPerChild     0
+
+User                    ##USR##
+Group                   users
+ServerAdmin             webmaster@127.0.0.1
+ServerRoot              ##ROOT##
+DocumentRoot            ##ROOT##/htdocs/
+ServerSignature         off
+HostnameLookups         off
+UseCanonicalName        on
+LockFile                ##ROOT##/logs/accept.lock
+Timeout                 30
+KeepAlive               on
+MaxKeepAliveRequests    100
+KeepAliveTimeout        5
+
+LimitRequestFields      30
+LimitRequestLine        7168
+
+Options                 FollowSymLinks Indexes Includes
+DefaultType             text/plain
+AddType                 text/html .shtml
+AddOutputFilter         INCLUDES .shtml
+
+LogFormat               "%h %l %u %t \"%r\" %>s %{content-length}i %b \"%{User-Agent}i\" \"%{Referer}i\" %T id=%{UNIQUE_ID}e %{CSRF_ATTRIBUTE}e %{csrfpId}i #%P"
+
+LogLevel                warn
+ErrorLog                ##ROOT##/logs/error_log
+PidFile                 ##ROOT##/logs/apache.pid
+CoreDumpDirectory       ##ROOT##/logs/
+
+TypesConfig             ../test/conf/mime.types
+LoadModule              status_module ##ROOT##/../httpd/modules/generators/.libs/mod_status.so
+LoadModule              info_module ##ROOT##/../httpd/modules/generators/.libs/mod_info.so
+LoadModule              unique_id_module ##ROOT##/../httpd/modules/metadata/.libs/mod_unique_id.so
+LoadModule              proxy_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy.so
+LoadModule              proxy_http_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy_http.so
+LoadModule              csrf_module ##ROOT##/../httpd/modules/csrf/.libs/mod_csrf.so
+LoadModule              setenvifplus_module ##ROOT##/../test/libexec/mod_setenvifplus.so
+LoadModule              parp_module ##ROOT##/../test/libexec/mod_parp.so
+LoadModule              qos_module ##ROOT##/../test/libexec/mod_qos.so
+
+Listen                  127.0.0.1:##PORT_BASE##
+<VirtualHost 127.0.0.1:##PORT_BASE##>
+   ServerName             127.0.0.1
+   TransferLog            ##ROOT##/logs/access_log
+
+   <IfDefine logonly>
+   CSRF_Action            log
+   </IfDefine>
+   CSRF_Passphrase        HN_gVo6FXFj0
+   ErrorDocument          403 /error/403.html
+
+   <Location /status>
+      SetHandler server-status
+   </Location>
+
+   <Location /info>
+      SetHandler server-info
+   </Location>
+
+   Redirect               /nzz http://127.0.0.1:##PORT_BASE2##/
+
+   ProxyRequests          Off
+   ProxyPass              /htt http://localhost:##PORT_BASE1##/htt retry=0
+   ProxyPassReverse       /htt http://localhost:##PORT_BASE1##/htt
+   <Proxy *>
+      Order deny,allow
+      Allow from all
+   </Proxy>
+
+   # set a user tracking cookie which shall be part of the csrf id
+   QS_SessionKey                        1234567890abcdef
+   QS_UserTrackingCookieName            csrfuid
+   <Location />
+      SetEnvIfPlus Host (.*):[0-9]+     CSRF_ATTRIBUTE=$1
+      SetEnvIfPlus mod_qos_user_id (.*) CSRF_ATTRIBUTE=${CSRF_ATTRIBUTE}:$1
+   </Location>
+
+</VirtualHost>
+
+Listen                  127.0.0.1:##PORT_BASE2##
+<VirtualHost 127.0.0.1:##PORT_BASE2##>
+   ServerName             www.nzz.ch
+   TransferLog            ##ROOT##/logs/access_log
+
+   ProxyRequests          Off
+   ProxyPass              /csrf.js !
+   ProxyPass              / http://www.nzz.ch/ retry=0
+   ProxyPassReverse       / http://www.nzz.ch/
+   ChangeResponseHeaderPlus Location http://(www.nzz.ch)/.* http://127.0.0.1:##PORT_BASE2##/$1
+
+   CSRF_Passphrase        HN_gVo6FXFj0
+
+   # set a user tracking cookie which shall be part of the csrf id
+   QS_SessionKey                        1234567890abcdef
+   QS_UserTrackingCookieName            csrfuid
+   <Location />
+      SetEnvIfPlus Host (.*):[0-9]+     CSRF_ATTRIBUTE=$1
+      SetEnvIfPlus mod_qos_user_id (.*) CSRF_ATTRIBUTE=${CSRF_ATTRIBUTE}:$1
+
+      RequestHeaderRemovePattern Accept-Encoding "(x-gzip|x-compress|x-deflate)[,; ]*"
+      RequestHeaderRemovePattern Accept-Encoding "(gzip|compress|deflate)[,; ]*"
+   </Location>
+</VirtualHost>
