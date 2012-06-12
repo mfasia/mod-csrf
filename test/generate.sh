@@ -32,5 +32,5 @@ done
 
 echo "SET PORT_BASE=$PORT_BASE"    >  scripts/ports
 echo "SET PORT_BASE1=$PORT_BASE1" >>  scripts/ports
-echo "SET PORT_BASE1=$PORT_BASE2" >>  scripts/ports
-echo "SET PORT_BASE1=$PORT_BASE3" >>  scripts/ports
+echo "SET PORT_BASE2=$PORT_BASE2" >>  scripts/ports
+echo "SET PORT_BASE3=$PORT_BASE3" >>  scripts/ports

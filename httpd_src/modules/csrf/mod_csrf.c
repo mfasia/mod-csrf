@@ -384,6 +384,9 @@ static int csrf_ignore_req(request_rec *r) {
   }
   if(apr_table_get(r->subprocess_env, CSRF_IGNORE)) {
     // ignore by env variable
+    ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
+                  CSRF_LOGD_PFX"ignores request by '"CSRF_IGNORE"' env variable, id=%s",
+                  csrf_get_uniqueid(r));
     return 1;
   }
   if(r->parsed_uri.path) {
@@ -394,7 +397,8 @@ static int csrf_ignore_req(request_rec *r) {
     if(ap_regexec(sconf->ignore_pattern, path, 0, NULL, 0) == 0) {
       apr_table_set(r->notes, CSRF_IGNORE_CACHE, "i");
       ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
-                    CSRF_LOGD_PFX"ignores request '%s' by pattern", r->parsed_uri.path);
+                    CSRF_LOGD_PFX"ignores request '%s' by pattern, id=%s",
+                    r->parsed_uri.path, csrf_get_uniqueid(r));
       return 1;
     }
   }
@@ -516,8 +520,14 @@ failed:
  */
 static char *csrf_idstr(request_rec *r) {
   const char *csrf_att = apr_table_get(r->subprocess_env, CSRF_ATTRIBUTE);
+  if(r->server->loglevel >= APLOG_DEBUG) {
+    ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
+                  CSRF_LOGD_PFX""CSRF_ATTRIBUTE"=%s, id=%s",
+                  csrf_att ? csrf_att : "-",
+                  csrf_get_uniqueid(r));
+  }
   if(csrf_att == NULL) {
-    return apr_pstrdup(r->pool, "");
+    return apr_pstrdup(r->pool, "-");
   }
   return apr_pstrdup(r->pool, csrf_att);
 }
@@ -770,6 +780,11 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
       ap_remove_output_filter(f);
     } else {
       // start searching head/body to inject our script
+      if(r->server->loglevel >= APLOG_DEBUG) {
+        ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
+                      CSRF_LOGD_PFX"enable JavaScript injection filter, id=%s",
+                      csrf_get_uniqueid(r));
+      }
       if(CSRF_CHUNKED_ONLY) {
         // send as chunked response
         apr_table_unset(r->headers_out, "Content-Length");

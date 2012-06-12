@@ -60,6 +60,7 @@ function addToNodes(paramName, csrfId) {
 	  if(attribute != null) {
 	    var fragment = null;
 	    var newattribute;
+	    var update = false;
 	    if(attribute.indexOf("#") != -1) {
 	      // extract the fragment and append it afterwards
 	      fragment = attribute.substr(attribute.indexOf("#"));
@@ -68,14 +69,19 @@ function addToNodes(paramName, csrfId) {
 	    if(attribute.indexOf("?") == -1) {
 	      // first query parameter
 	      newattribute = attribute + "?" + paramName + "=" + csrfId;
+	      // don't add id if it is not required (may distrub other js code)
+	      // update = true;
 	    } else {
 	      // append to existing query paramter
 	      newattribute = attribute + "&" + paramName + "=" + csrfId;
+	      update = true;
 	    }
 	    if(fragment) {
 	      newattribute = newattribute + fragment;
 	    }
-	    nodes[j].setAttribute(types[i][ai], newattribute);
+	    if(update) {
+	      nodes[j].setAttribute(types[i][ai], newattribute);
+	    }
 	  }
 	  ai++;
 	}

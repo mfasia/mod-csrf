@@ -79,6 +79,9 @@ Listen                  127.0.0.1:##PORT_BASE##
    </IfDefine>
    CSRF_Passphrase        HN_gVo6FXFj0
    ErrorDocument          403 /error/403.html
+   <IfDefine timeout>
+   CSRF_Timeout           3
+   </IfDefine>
 
    <Location /status>
       SetHandler server-status
@@ -117,7 +120,7 @@ Listen                  127.0.0.1:##PORT_BASE2##
    ProxyPass              /csrf.js !
    ProxyPass              / http://www.nzz.ch/ retry=0
    ProxyPassReverse       / http://www.nzz.ch/
-   ChangeResponseHeaderPlus Location http://(www.nzz.ch)/.* http://127.0.0.1:##PORT_BASE2##/$1
+   ChangeResponseHeaderPlus Location ^http://www.nzz.ch/(.*) http://127.0.0.1:##PORT_BASE2##/$1
 
    CSRF_Passphrase        HN_gVo6FXFj0
 
