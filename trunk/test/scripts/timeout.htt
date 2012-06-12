@@ -1,10 +1,13 @@
 #
-# Test id enforcement
+# Test id timeout
 #
 
 INCLUDE scripts/ports
 
 CLIENT
+
+# restart with 3 sec timeout
+_EXEC ./ctl.sh restart -D timeout 1>/dev/null 2>/dev/null
 
 # get id
 
@@ -15,49 +18,39 @@ __
 _MATCH headers "Set-Cookie: csrfuid=(.*); Path" cookie
 _MATCH body "csrfInsert\(\"csrfpId\", \"(.*)\"\);" csrfpid
 _WAIT
-
-# no id
-
-_REQ 127.0.0.1 $PORT_BASE
-__GET /htt/index.html?query=1234 HTTP/1.1
-__Host: 127.0.0.1:$PORT_BASE
-__
-_EXPECT . "Forbidden"
-_WAIT
 _CLOSE
-_SLEEP 200
-_EXPECT EXEC "mod_csrf\(020\): request denied, no 'csrfpId' parameter in request"
-_EXEC tail -1 logs/error_log
 
-_REQ 127.0.0.1 $PORT_BASE
-__POST /htt/index.html HTTP/1.1
-__Host: 127.0.0.1:$PORT_BASE
-__Cookie: csrfuid=$cookie
-__Content-Type: application/x-www-form-urlencoded
-__Content-Length: AUTO
-__
-_-query=1234
-_EXPECT . "Forbidden"
-_WAIT
-_CLOSE
-_SLEEP 200
-_EXPECT EXEC "mod_csrf\(020\): request denied, no 'csrfpId' parameter in request"
-_EXEC tail -1 logs/error_log
-
-# wrong content (due to missing user tracking cookie)
+# configured: 3 seconds
+_SLEEP 5000
 
 _REQ 127.0.0.1 $PORT_BASE
 __GET /htt/index.html?query=1234&csrfpId=$csrfpid HTTP/1.1
 __Host: 127.0.0.1:$PORT_BASE
+__Cookie: csrfuid=$cookie
 __
-_EXPECT . "Forbidden"
+_EXPECT . "!200 OK"
 _WAIT
 _CLOSE
 _SLEEP 200
-_EXPECT EXEC "mod_csrf\(020\): request denied, invalid id"
+_EXPECT EXEC "mod_csrf\(020\): request denied, expired id, action=deny"
 _EXEC tail -1 logs/error_log
 
-# valid id
+# restart with default timeout
+_EXEC ./ctl.sh restart 1>/dev/null 2>/dev/null
+
+# get id
+
+_REQ 127.0.0.1 $PORT_BASE
+__GET /htt/index.html HTTP/1.1
+__Host: 127.0.0.1:$PORT_BASE
+__
+_MATCH headers "Set-Cookie: csrfuid=(.*); Path" cookie
+_MATCH body "csrfInsert\(\"csrfpId\", \"(.*)\"\);" csrfpid
+_WAIT
+_CLOSE
+
+# default timeout: 3600 seconds
+_SLEEP 5000
 
 _REQ 127.0.0.1 $PORT_BASE
 __GET /htt/index.html?query=1234&csrfpId=$csrfpid HTTP/1.1
@@ -66,18 +59,7 @@ __Cookie: csrfuid=$cookie
 __
 _EXPECT . "200 OK"
 _WAIT
-
-_REQ 127.0.0.1 $PORT_BASE
-__POST /htt/index.html HTTP/1.1
-__Host: 127.0.0.1:$PORT_BASE
-__Cookie: csrfuid=$cookie
-__Content-Type: application/x-www-form-urlencoded
-__Content-Length: AUTO
-__
-_-query=1234&csrfpId=$csrfpid
-_EXPECT . "200 OK"
-_WAIT
-
+_CLOSE
 
 END
 
@@ -101,12 +83,27 @@ __</body>
 __</html>
 _CLOSE
 
+# initial page
+
+_RES
+_WAIT
+__HTTP/1.1 200 OK
+__Content-Type: text/html
+__Content-Length: AUTO
+__
+__<html>
+__<head>
+__<title>htt</title>
+__</head>
+__<body>
+__<p>htt</p>
+__</body>
+__</html>
+_CLOSE
+
 # valid requests
 
 _RES
-# id has been removed
-_EXPECT . "query=1234"
-_EXPECT . "!csrfpId"
 _WAIT
 __HTTP/1.1 200 OK
 __Content-Type: text/html
@@ -120,22 +117,6 @@ __<body>
 __<p>htt</p>
 __</body>
 __</html>
-
-_RES
-_EXPECT . "query=1234"
-_EXPECT . "!csrfpId"
-_WAIT
-__HTTP/1.1 200 OK
-__Content-Type: text/html
-__Content-Length: AUTO
-__
-__<html>
-__<head>
-__<title>htt</title>
-__</head>
-__<body>
-__<p>htt</p>
-__</body>
-__</html>
+_CLOSE
 
 END
