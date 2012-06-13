@@ -13,7 +13,7 @@ ERRORS=0
 WARNINGS=0
 
 # delete the access log file since it is used to generate permit rules
-./ctl.sh stop
+./ctl.sh stop 1>/dev/null
 sleep 1
 rm -f logs/*
 ./ctl.sh start 1>/dev/null
@@ -25,6 +25,8 @@ for E in `ls scripts/*htt`; do
     echo "FAILED $E"
   fi
 done
+
+./ctl.sh stop 1>/dev/null
 
 CFS=`find . -name "*core*"`
 if [ -n "$CFS" ]; then

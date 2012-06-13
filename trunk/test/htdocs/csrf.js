@@ -69,17 +69,17 @@ function addToNodes(paramName, csrfId) {
 	    if(attribute.indexOf("?") == -1) {
 	      // first query parameter
 	      newattribute = attribute + "?" + paramName + "=" + csrfId;
-	      // don't add id if it is not required (may distrub other js code)
+	      // don't add id if it is not required (may disturb other js code)
 	      // update = true;
 	    } else {
 	      // append to existing query paramter
 	      newattribute = attribute + "&" + paramName + "=" + csrfId;
 	      update = true;
 	    }
-	    if(fragment) {
-	      newattribute = newattribute + fragment;
-	    }
 	    if(update) {
+	      if(fragment) {
+		newattribute = newattribute + fragment;
+	      }
 	      nodes[j].setAttribute(types[i][ai], newattribute);
 	    }
 	  }
@@ -103,15 +103,6 @@ function addToForms(paramName, csrfId) {
 }
 
 function csrfInsert(paramName, csrfId) {
-//  var i;
-//  document.write("id to add: " + csrfId + "<br/>");
-//  document.write("domain: " + document.domain + "<br/>");
-//
-//  var links = document.links;
-//  document.write("number of links: " + links.length + "<br/>");
-//
-//  var forms = document.getElementsByTagName("form");
-//  document.write("number of forms: " + forms.length + "<br/>");
 
   // register callbacks when sending data by the browser
   registerAjax(paramName, csrfId);

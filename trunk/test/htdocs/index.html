@@ -30,7 +30,7 @@
 var d = document.getElementById('dynamic');
 var link = document.createElement('a');
 link.setAttribute('href', '/login.html?transfer=1000');
-link.textContent = "dynmic link";
+link.textContent = "dynamic link (added by JavaScript)";
 d.appendChild(link);
 //-->
 </script>
@@ -61,8 +61,21 @@ d.appendChild(link);
       <li><a href="/info">info</a></li>
       <li><a href="/doc/index.html">doc</a></li>
       <li><a href="/nzz">www.nzz.ch</a></li>
+      <li><a href="/20">www.20min.ch</a></li>
       </ul>
     </p>
     <hr>
+<script type="text/javascript">
+<!--
+  document.write("domain: " + document.domain + "<br/>");
+  var links = document.links;
+  document.write("number of links: " + links.length + "<br/>");
+  for(i=0; i < links.length; i++) {
+    document.write(" > " + links[i].href + "<br/>");
+  };
+  var forms = document.getElementsByTagName("form");
+  document.write("number of forms: " + forms.length + "<br/>"); 
+//-->
+</script>
   </body>
 </html>
