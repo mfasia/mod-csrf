@@ -2,13 +2,19 @@
 <html>
   <head>
     <title>INDEX 2</title>
+<script language="JavaScript">
+<!--
+function applUnloadFunction() {
+  alert("leaving " + window.location.href);
+}
+//-->
+</script>
   </head>
 
-  <body>
+  <!-- page has already some "onUnload()" code -->
+  <body onUnload="applUnloadFunction()">
 
   <a href="/index.html">back</a>
-
-
 
     <hr>
 

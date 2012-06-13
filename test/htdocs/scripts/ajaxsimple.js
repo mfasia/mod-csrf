@@ -1,4 +1,7 @@
 
+var counter1 = 0;
+var counter2 = 0;
+
 function autoStart() {
   setInterval("autoUpdate()", 1000);
   setInterval("autoSend()", 2000);
@@ -18,7 +21,8 @@ function sendHandler() {
       //var data = this.responseXML.getElementById("update");
       var update = document.getElementById("autosend");
       //update.innerHTML = data;
-      update.innerHTML = "== UPDATED from /update.xml == (" + this.responseText + ")";
+      counter2++;
+      update.innerHTML = "== UPDATED from /update.xml == (" + this.responseText + ") " + counter2;
       return;
     }
   }
@@ -53,7 +57,8 @@ function statusDiv() {
   if (req.readyState == 4) { // Complete
     if (req.status == 200) { // OK response
       var update = document.getElementById("autoupdate");
-      update.innerHTML = req.responseText;
+      counter1++;
+      update.innerHTML = req.responseText + " " + counter1;
     } else{
       var update = document.getElementById("autoupdate");
       update.innerHTML = "FAILED!!!";
