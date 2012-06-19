@@ -110,14 +110,14 @@ typedef struct {
   unsigned char key[EVP_MAX_KEY_LENGTH];
   char *path2script;
   apr_time_t timeout;
-  int referer_check;
+  int referer_check;          /** enabled by default (-1) or by user (1) */
 } csrf_srv_config_t;
 
 typedef struct {
   int flags;
   int enabled;                /** enabled by default (-1) or by user (1) */
   char *path2script;
-  int referer_check;
+  int referer_check;          /** enabled by default (-1) or by user (1) */
 } csrf_dir_config_t;
 
 typedef enum  {
@@ -304,7 +304,7 @@ static const char *csrf_get_uniqueid(request_rec *r) {
   return id;
 }
 
-/*
+/**
  * Similar to standard strstr() but case insensitive and lenght limitation
  * (char which is not 0 terminated).
  *
@@ -428,7 +428,7 @@ static apr_table_t *csrf_get_query(request_rec *r) {
   return qt;
 }
 
-/*
+/**
  * Crypto routines (from mod_auth_oid.c)
  */
 static char *csrf_dec64(request_rec *r, const char *str) {
@@ -1217,7 +1217,7 @@ const char *csrf_pwd_cmd(cmd_parms *cmd, void *dcfg, const char *pwd) {
 }
 
 static const command_rec csrf_config_cmds[] = {
-  // TODO: add directive do override ignore pattern sconf->ignore_pattern
+  // TODO: add directive (and cfg merge) do override ignore pattern sconf->ignore_pattern
   // TODO: directive to override CSRF_QUERYID
   AP_INIT_FLAG("CSRF_Enable", csrf_enable_cmd, NULL,
                RSRC_CONF|ACCESS_CONF,
@@ -1233,15 +1233,15 @@ static const command_rec csrf_config_cmds[] = {
   AP_INIT_TAKE1("CSRF_PassPhrase", csrf_pwd_cmd, NULL,
                 RSRC_CONF,
                 "CSRF_PassPhrase <string>, used for the encryption of the mod_csrf"
-                " request id. Default is a non-persistent random passphrase."),
+                " request identifier. Default is a non-persistent random passphrase."),
   AP_INIT_TAKE1("CSRF_Timeout", csrf_tmo_cmd, NULL,
                 RSRC_CONF,
-                "CSRF_Timeout <seconds>, the validity period of the csrf id."
+                "CSRF_Timeout <seconds>, the validity period of the csrf identifier."
                 " Default is 3600 seconds."),
   AP_INIT_TAKE1("CSRF_ScriptPath", csrf_path2script_cmd, NULL,
                 RSRC_CONF|ACCESS_CONF,
                 "CSRF_ScriptPath <path>, URL path to the JavaScript to inject the"
-                " mod_csrf request id. Default is '"CSRF_DEFAULT_PATH"'."),
+                " mod_csrf request identifier. Default is '"CSRF_DEFAULT_PATH"'."),
   { NULL }
 };
 
