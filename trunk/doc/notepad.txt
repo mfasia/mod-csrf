@@ -19,7 +19,10 @@ A) add an "unique_id" to each request (having args)
   - dom tree update: to all html forms in order to protect POST requests
     -> simple
   - to all references (at least those having a query)
-    -> difficult to implement by JS? performance? page reload/not loaded completely?
+    -> difficult to implement by JS?
+       performance?
+       page reload
+       what if page not loaded completely?
 - variant B: inject java script which adds unique_id
   - to each http request performed by the browser
     -> on every send request (content within the page (no user interaction/ajax support))
