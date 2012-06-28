@@ -57,28 +57,33 @@
   <p>
 <b>Cross-site request forgery (<a href="http://en.wikipedia.org/wiki/Cross-site_request_forgery" 
 target="_blank">CSRF</a>)</b> attacks try to force a user to send data to 
-a Web applicaion in which the user has currently an authenticated session (the user 
-has logged on) in order to execute actions the used did not want. These kind of attacks 
-are sometimes performed by sending somebody a manipulated hyperlink by email or by storing 
-malicious HTML links within a Web site, e.g., a public forum or blog. 
+a Web application in which the user has currently an authenticated session 
+(the user has logged on) in order to execute actions the used did not want. 
+These kind of attacks are sometimes performed by sending somebody a 
+manipulated hyperlink by email or by storing malicious HTML links within 
+a Web site, e.g., a public forum or blog. 
   </p>
   <p>
-The mod_csrf project implements protection measurements against CSRF attacks. It can be 
-installed on your Apache Web server to help to protect your users from such an attack.
+The mod_csrf project implements protection measurements against CSRF attacks. 
+It can be installed on your Apache Web server to help to protect your users 
+from such an attack.
 The project provides two components:
 <ul>
-<li>A JavaScript which injects a unique (per user/per session) request identifier to HTTP request. The 
-identifier is added to evey HTML form, hyperlink ("a" tag by default/list of attributes may be 
-extended), as well as Ajax request.</li>
-<li>An Apache module which may be used to verify that HTTP requests do contain this unique identifier 
-injected by the JavaScript. The module can also be configured to validate the HTTP referer header 
-in addition.</li>
+<li>A JavaScript which injects a unique (per user/per session) request 
+identifier to HTTP request. The identifier is added to evey HTML form, 
+hyperlink ("a" tag by default/list of attributes may be extended), as well 
+as Ajax request.</li>
+<li>An Apache module which may be used to verify that HTTP requests do 
+contain this unique identifier injected by the JavaScript. The module 
+can also be configured to validate the HTTP referer header in addition.</li>
 </ul>
   </p>
 
   <p>
-mod_csrf is an open source software licensed under the <a href="LICENSE.txt">GNU Lesser General Public License</a>.
-Downloads are handled by <a href="http://sourceforge.net/projects/mod-csrf/">SourceForge.net</a>.
+mod_csrf is an open source software licensed under the 
+<a href="LICENSE.txt">GNU Lesser General Public License</a>.
+Downloads are handled by 
+<a href="http://sourceforge.net/projects/mod-csrf/">SourceForge.net</a>.
   </p>
 
 
@@ -88,29 +93,34 @@ Downloads are handled by <a href="http://sourceforge.net/projects/mod-csrf/">Sou
 <ul>
 <li>
 <code>CSRF_Enable 'on'|'off'</code> </br>
-Enables or disables the module on a per server or location basis. Default is 'on'.
+Enables or disables the module on a per server or location basis. Default 
+is 'on'.
 </li>
 <li>
 <code>CSRF_EnableReferer 'on'|'off'</code> </br>
-mod_csrf may deny requests whose HTTP <i>Host</i> and <i>Referer</i> header do not contain the 
-very same hostname. This referer header check is enabled by default.
+mod_csrf may deny requests whose HTTP <i>Host</i> and <i>Referer</i> header 
+do not contain the very same hostname. This referer header check is enabled 
+by default.
 </li>
 <li>
 <code>CSRF_Action 'deny'|'log'</code> </br>
-Defines the action to take when a request does violates the configured rules. Default is 'deny'.
+Defines the action to take when a request does violates the configured rules. 
+Default is 'deny'.
 </li>
 <li>
 <code>CSRF_PassPhrase &lt;string&gt;</code> </br>
-Used for to encrypt the mod_csrf request identifier. Default is a non-persistent random passphrase.
+Used for to encrypt the mod_csrf request identifier. Default is a 
+non-persistent random passphrase.
 </li>
 <li>
 <code>CSRF_Timeout &lt;seconds&gt;</code> </br>
-The validity period of the csrf request identifier injected by the JavaScript. Default is 3600 seconds.
+The validity period of the csrf request identifier injected by the 
+JavaScript. Default is 3600 seconds.
 </li>
 <li>
 <code>CSRF_ScriptPath &lt;path&gt;</code> </br>
-URL path to the JavaScript to include to each HTML which is then used to inject the mod_csrf 
-request identifier. Default path is '/csrf.js'.
+URL path to the JavaScript to include to each HTML which is then used 
+to inject the mod_csrf request identifier. Default path is '/csrf.js'.
 </li>
 </ul>
 
@@ -118,25 +128,28 @@ request identifier. Default path is '/csrf.js'.
 <ul>
 <li>
 <code>CSRF_IGNORE</code> </br>
-The module enforces that every request containing arguments (query string or request body 
-parameter) also contains the request identifier injected by the JavaScript. Somce handler (URL patterns) 
-such as those with the ending <id title=".*(jpg)|(jpeg)|(gif)|(png)|(js)|(css)$">*.jpg, *.png, *.css, etc.</id> 
-are excluded from this rule. You may exclude additional requests by setting this environment using mod_setenvif or 
+The module enforces that every request containing arguments (query string 
+or request body parameter) also contains the request identifier injected 
+by the JavaScript. Somce handler (URL patterns) such as those with the 
+ending <id title=".*(jpg)|(jpeg)|(gif)|(png)|(js)|(css)$">*.jpg, *.png, *.css, etc.</id> 
+are excluded from this rule. You may exclude additional requests by 
+setting this environment using mod_setenvif or 
 <a href="http://opensource.adnovum.ch/mod_setenvifplus/" target="_blank">mod_setenvifplus</a>. </br>
 Example: </br>&nbsp;&nbsp;<code>SetEnviIf Request_URI /startpage.html CSRF_IGNORE=yes</code>
 </li>
 <li>
 <code>CSRF_ATTRIBUTE</code> </br>
-This environment variable defines the content within the request identifier. It may be set using 
-mod_setenvif or 
+This environment variable defines the content within the request identifier. 
+It may be set using mod_setenvif or 
 <a href="http://opensource.adnovum.ch/mod_setenvifplus/" target="_blank">mod_setenvifplus</a> and 
 may contain values such as the user name or a session cookie. </br>
 Example: </br>&nbsp;&nbsp;<code>SetEnvIfPlus Remote_User (.*) CSRF_ATTRIBUTE=$1</code>
 </li>
 <li>
 <code>UNIQUE_ID</code> </br>
-A unique request id generated by mod_uniqueid which is (if available) used within log 
-messages written by mod_csrf. We recommend to use this id within the transaction log as well. </br>
+A unique request id generated by mod_uniqueid which is (if available) used 
+within log messages written by mod_csrf. We recommend to use this id within 
+the transaction log as well. </br>
 Example: </br>&nbsp;&nbsp;<code>LogFormat "%h %l %u %t \"%r\" %&gt;s %b \"%{User-Agent}i\" \"%{Referer}i\" %T <b>id=%{UNIQUE_ID}e</b> %{CSRF_ATTRIBUTE}e #%P"</code>
 </li>
 </ul>
