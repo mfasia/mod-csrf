@@ -57,6 +57,8 @@ function addToNodes(paramName, csrfId) {
 	var ai = 1;
 	while(types[i][ai] != null) {
 	  var attribute = nodes[j].getAttribute(types[i][ai]);
+//	  if((attribute != null) && 
+//	     (attribute.indexOf(csrfId) == -1)) {
 	  if(attribute != null) {
 	    var fragment = null;
 	    var newattribute;
