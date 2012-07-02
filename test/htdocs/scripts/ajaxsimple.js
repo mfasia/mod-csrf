@@ -9,8 +9,9 @@ function autoStart() {
 
 function autoSend() {
   var client = new XMLHttpRequest();
+  var link = "/" + "update.xml" + "?" + "id=123456789";
   client.onreadystatechange = sendHandler;
-  client.open("GET", "/update.xml?id=123456789");
+  client.open("GET", link);
   client.send();
 }
 
@@ -18,9 +19,7 @@ function sendHandler() {
   if(this.readyState == this.DONE) {
     if(this.status == 200 &&
        this.responseXML != null) {
-      //var data = this.responseXML.getElementById("update");
       var update = document.getElementById("autosend");
-      //update.innerHTML = data;
       counter2++;
       update.innerHTML = "== UPDATED from /update.xml == (" + this.responseText + ") " + counter2;
       return;
@@ -28,15 +27,16 @@ function sendHandler() {
   }
 }
 
-// automatically update the "autoupdate" div with the status fetched from the server
+// automatically update the "autoupdate" div with the status fetched 
+// from the server
 function autoUpdate() {
   var update = document.getElementById("autoupdate");
+  var link = "/update.txt" + "?" + "id=123";
   if(window.XMLHttpRequest) { // non-IE browsers
     req = new XMLHttpRequest();
     req.onreadystatechange = statusDiv;
     try {
-      //req.open("GET", "/update.txt", true);
-      req.open("GET", "/update.txt?id=123", true);
+      req.open("GET", link, true);
     } catch (e) {
       // ignore
       update.innerHTML = "FAILED!!!";
@@ -46,7 +46,7 @@ function autoUpdate() {
     req = new ActiveXObject("Microsoft.XMLHTTP");
     if (req) {
       req.onreadystatechange = statusDiv;
-      req.open("GET", "/update.txt?id=123", true);
+      req.open("GET", link, true);
       req.send();
     }
   }
