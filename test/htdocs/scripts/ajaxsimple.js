@@ -21,7 +21,7 @@ function sendHandler() {
        this.responseXML != null) {
       var update = document.getElementById("autosend");
       counter2++;
-      update.innerHTML = "== UPDATED from /update.xml == (" + this.responseText + ") " + counter2;
+      update.innerHTML = "== UPDATED from /update.xml == (" + this.responseText + ") <b>" + counter2 + "</b>";
       return;
     }
   }
@@ -58,7 +58,7 @@ function statusDiv() {
     if (req.status == 200) { // OK response
       var update = document.getElementById("autoupdate");
       counter1++;
-      update.innerHTML = req.responseText + " " + counter1;
+      update.innerHTML = req.responseText + " <b>" + counter1 + "</b>";
     } else{
       var update = document.getElementById("autoupdate");
       update.innerHTML = "FAILED!!!";
