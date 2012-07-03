@@ -1,0 +1,27 @@
+#
+# Test action
+#
+
+INCLUDE scripts/ports
+
+CLIENT
+
+_EXEC ./ctl.sh restart -D logonly 1>/dev/null 2>/dev/null
+
+_REQ 127.0.0.1 $PORT_BASE
+__GET /index.html?query=1234 HTTP/1.1
+__Host: 127.0.0.1:$PORT_BASE
+__
+_EXPECT . "!Forbidden"
+_EXPECT . "200 OK"
+_WAIT
+_CLOSE
+_SLEEP 200
+_EXPECT EXEC "mod_csrf\(020\): request denied, no 'csrfpId' parameter in request, action=log"
+_EXEC tail -1 logs/error_log
+
+END
+
+BLOCK FINALLY
+_EXEC ./ctl.sh restart 1>/dev/null 2>/dev/null
+END
