@@ -569,7 +569,9 @@ static int csrf_validate_id(request_rec *r, const char *encid, char **msg) {
         *msg = apr_psprintf(r->pool, "invalid id (%s instead of %s)", csrf_att, valid_csrf_att);
       }
     } else {
-      *msg = apr_psprintf(r->pool, "expired id");
+      apr_time_t exp = r->request_time - (request_time + sconf->timeout); 
+      *msg = apr_psprintf(r->pool, "expired id (%"APR_TIME_T_FMT" sec)",
+                          apr_time_sec(exp));
     }
   } else {
     *msg = apr_psprintf(r->pool, "invalid id format or signature");
@@ -1201,6 +1203,7 @@ const char *csrf_tmo_cmd(cmd_parms *cmd, void *dcfg, const char *sec) {
     return apr_psprintf(cmd->pool, "%s: requires numeric values greater than 0",
                         cmd->directive->directive);
   }
+  sconf->timeout = apr_time_from_sec(sconf->timeout);
   sconf->flags |= CSRF_FUNC_FLAGS_TMO;
   return NULL;
 }
