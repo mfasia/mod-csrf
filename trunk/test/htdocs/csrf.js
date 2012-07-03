@@ -45,6 +45,8 @@ function registerAjax(paramName, csrfId) {
 
 // adds the csrfId to all known refernce nodes
 function addToNodes(paramName, csrfId) {
+  var httpHost = "http://" + document.domain;
+  var httpsHost = "https://" + document.domain;
   // iterate through all known types, e.g. "a"
   for(i = 0; i < types.length; i++) {
     var j;
@@ -57,8 +59,10 @@ function addToNodes(paramName, csrfId) {
 	var ai = 1;
 	while(types[i][ai] != null) {
 	  var attribute = nodes[j].getAttribute(types[i][ai]);
+// add id only once
 //	  if((attribute != null) && 
 //	     (attribute.indexOf(csrfId) == -1)) {
+// add if to every ref
 	  if(attribute != null) {
 	    var fragment = null;
 	    var newattribute;
@@ -77,6 +81,19 @@ function addToNodes(paramName, csrfId) {
 	      // append to existing query paramter
 	      newattribute = attribute + "&" + paramName + "=" + csrfId;
 	      update = true;
+	    }
+	    // absolute http reference
+	    if(attribute.match(/^http:\/\//)) {
+	      if(attribute.indexOf(httpHost) == -1) {
+		// ignore link to other domain
+		update = false;
+	      }
+	    }
+	    if(attribute.match(/^https:\/\//)) {
+	      if(attribute.indexOf(httpsHost) == -1) {
+		// ignore link to other domain
+		update = false;
+	      }
 	    }
 	    if(update) {
 	      if(fragment) {
