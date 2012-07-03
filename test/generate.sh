@@ -16,11 +16,11 @@ PORT_BASE5=`expr ${PORT_BASE} + 5`
 
 mkdir -p logs
 mkdir -p htdocs/doc
-rm htdocs/doc/*
+rm -f htdocs/doc/*
 ln -s `pwd`/../doc/*.html htdocs/doc/
 ln -s `pwd`/../doc/*jpg htdocs/doc/
 
-FILES="conf/httpd.conf"
+FILES="conf/httpd.conf htdocs/index.html"
 for E in $FILES; do
   sed <${E}.tmpl >${E} \
     -e "s;##ROOT##;$ROOT;g" \
