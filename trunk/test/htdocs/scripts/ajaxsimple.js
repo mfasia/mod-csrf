@@ -21,7 +21,7 @@ function sendHandler() {
        this.responseXML != null) {
       var update = document.getElementById("autosend");
       counter2++;
-      update.innerHTML = "== UPDATED from /update.xml == (" + this.responseText + ") <b>" + counter2 + "</b>";
+      update.innerHTML = this.responseText + " <b>" + counter2 + "</b>";
       return;
     }
   }
