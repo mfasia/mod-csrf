@@ -51,7 +51,7 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-./configure --with-mpm=worker --enable-so --enable-csrf=shared --enable-proxy=shared --enable-ssl --enable-status=shared --enable-info=shared --enable-static-support --enable-unique-id --enable-unique-id=shared --enable-dumpio=shared $ADDMOD
+./configure --with-mpm=worker --enable-so --enable-csrf=shared --enable-proxy=shared --enable-ssl --enable-status=shared --enable-info=shared --enable-static-support --enable-unique-id --enable-unique-id=shared --enable-rewrite=shared --enable-dumpio=shared $ADDMOD
 if [ $? -ne 0 ]; then
   echo "ERROR"
   exit 1

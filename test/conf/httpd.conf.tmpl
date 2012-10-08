@@ -72,6 +72,7 @@ LoadModule              csrf_module ##ROOT##/../httpd/modules/csrf/.libs/mod_csr
 LoadModule              setenvifplus_module ##ROOT##/../test/libexec/mod_setenvifplus.so
 LoadModule              parp_module ##ROOT##/../test/libexec/mod_parp.so
 LoadModule              qos_module ##ROOT##/../test/libexec/mod_qos.so
+LoadModule              rewrite_module ##ROOT##/../httpd/modules/mappers/.libs/mod_rewrite.so
 
 Listen                  127.0.0.1:##PORT_BASE##
 <VirtualHost 127.0.0.1:##PORT_BASE##>
@@ -105,6 +106,18 @@ Listen                  127.0.0.1:##PORT_BASE##
       Order deny,allow
       Allow from all
    </Proxy>
+
+   CSRF_Enable off
+   RewriteEngine on
+   # redirect every 5th request to the login page
+   SetEnvIfPlus Request_Query counter=.*5.*  SESSION_EXPIRATION=yes
+   RewriteCond %{ENV:SESSION_EXPIRATION} ^yes
+   RewriteRule ^/(.*)$ http://127.0.0.1:##PORT_BASE##/login.html?login [L,R]
+   # indicate login page access by setting the "X-LoginPage" header
+   SetEnvIfPlus Request_Query .*login.* LOGINPAGE=yes
+   ResponseHeaderPlus set X-LoginPage login env=LOGINPAGE
+   ResponseHeaderPlus set Access-Control-Allow-Origin http://127.0.0.1:##PORT_BASE## env=LOGINPAGE
+   ResponseHeaderPlus set Access-Control-Expose-Headers X-LoginPage env=LOGINPAGE
 
    # set a user tracking cookie which shall be part of the csrf id
    QS_SessionKey                        1234567890abcdef

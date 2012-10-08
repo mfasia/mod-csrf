@@ -7,6 +7,10 @@ function autoStart() {
   setInterval("autoSend()", 2000);
 }
 
+function portal() {
+  setInterval("fetch()", 2000);
+}
+
 function autoSend() {
   var client = new XMLHttpRequest();
   var link = "/" + "update.xml" + "?" + "id=123456789";
@@ -62,6 +66,29 @@ function statusDiv() {
     } else{
       var update = document.getElementById("autoupdate");
       update.innerHTML = "FAILED!!!";
+    }
+  }
+}
+
+function fetch() {
+  var update = document.getElementById("autoupdate");
+  var link = "/update.txt?counter=" + counter1;
+  if(window.XMLHttpRequest) { // non-IE browsers
+    req = new XMLHttpRequest();
+    req.onreadystatechange = statusDiv;
+    try {
+      req.open("GET", link, true);
+    } catch (e) {
+      // ignore
+      update.innerHTML = "FAILED!!!";
+    }
+    req.send(null);
+  } else if (window.ActiveXObject) { // IE
+    req = new ActiveXObject("Microsoft.XMLHTTP");
+    if (req) {
+      req.onreadystatechange = statusDiv;
+      req.open("GET", link, true);
+      req.send();
     }
   }
 }
