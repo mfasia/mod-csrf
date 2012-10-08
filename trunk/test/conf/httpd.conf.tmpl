@@ -107,7 +107,7 @@ Listen                  127.0.0.1:##PORT_BASE##
       Allow from all
    </Proxy>
 
-   CSRF_Enable off
+   #CSRF_Enable off
    RewriteEngine on
    # redirect every 5th request to the login page
    SetEnvIfPlus Request_Query counter=.*5.*  SESSION_EXPIRATION=yes
