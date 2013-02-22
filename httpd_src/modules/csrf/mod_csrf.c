@@ -5,7 +5,7 @@
  * mod_csrf - Cross-site request forgery protection module for
  *            the Apache web server
  *
- * Copyright (C) 2012 Christoph Steigmeier, Pascal Buchbinder
+ * Copyright (C) 2012-2013 Christoph Steigmeier, Pascal Buchbinder
  * 
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -25,7 +25,7 @@
 /************************************************************************
  * Version
  ***********************************************************************/
-static const char g_revision[] = "0.2";
+static const char g_revision[] = "0.3";
 
 /************************************************************************
  * Includes
@@ -42,6 +42,8 @@ static const char g_revision[] = "0.2";
 
 /* apache */
 #include <httpd.h>
+#include <http_config.h>
+#include <http_core.h>
 #include <http_main.h>
 #include <http_request.h>
 #include <http_connection.h>
@@ -50,15 +52,12 @@ static const char g_revision[] = "0.2";
 #include <util_filter.h>
 #include <ap_regex.h>
 
-#include <mod_ssl.h>
-#include <ssl_private.h>
-#include <mod_core.h>
-
 /* apr */
 #include <apr_hooks.h>
 #include <apr_strings.h>
 #include <apr_date.h>
 #include <apr_base64.h>
+#include <apr_lib.h>
 
 /************************************************************************
  * defines
