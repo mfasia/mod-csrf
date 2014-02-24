@@ -1,0 +1,65 @@
+INCLUDE scripts/ports
+
+CLIENT
+
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Host: server1:$PORT_BASE4
+__
+_EXPECT . "!start page 3"
+_EXPECT . "!200 OK"
+_EXPECT . "307 Temporary Redirect"
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
+_WAIT
+_SSL:GET_SESSION SIL
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$COOKIE
+__
+_EXPECT . "307 Temporary Redirect"
+_EXPECT . "!Set-Cookie"
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$COOKIE
+__
+_EXPECT . "start page 3"
+_EXPECT . "200 OK"
+_WAIT
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 <CHANGED FP>
+__Cookie: clid=$COOKIE
+__
+_EXPECT . "start page 3"
+_EXPECT . "200 OK"
+_WAIT
+_CLOSE
+
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 <CHANGED FP>
+__Cookie: clid=$COOKIE
+__
+_EXPECT . "start page 3"
+_EXPECT . "200 OK"
+_WAIT
+
+END

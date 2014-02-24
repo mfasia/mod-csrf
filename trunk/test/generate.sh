@@ -40,3 +40,28 @@ echo "SET PORT_BASE2=$PORT_BASE2" >>  scripts/ports
 echo "SET PORT_BASE3=$PORT_BASE3" >>  scripts/ports
 echo "SET PORT_BASE4=$PORT_BASE4" >>  scripts/ports
 echo "SET PORT_BASE5=$PORT_BASE5" >>  scripts/ports
+
+if [ ! -d ssl ]; then
+  mkdir -p ssl
+  cd ssl
+  touch index.txt
+  echo 01 > serial
+  openssl req -config ../conf/openssl.conf -new -x509 -days 3650 -nodes \
+   -keyout cakey.pem -out cacert.pem
+
+  # certs
+  CERTS="server1 localhost"
+  for E in $CERTS; do
+    sed <../conf/openssl.conf >../conf/openssl2.conf \
+     -e "s;csrf ca;$E;g"
+    openssl req -config ../conf/openssl2.conf -new -nodes \
+     -keyout $E.key.pem \
+     -out $E.req.pem
+    openssl ca  -config ../conf/openssl2.conf -batch -policy policy_anything \
+     -out $E.cert.pem \
+     -infiles $E.req.pem
+    rm $E.req.pem
+    rm ../conf/openssl2.conf
+  done
+  rm -f 0*.pem
+fi
