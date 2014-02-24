@@ -39,6 +39,12 @@ ln -s `pwd`/httpd_src/modules/csrf/mod_csrf.c httpd/modules/csrf
 ln -s `pwd`/httpd_src/modules/csrf/config.m4 httpd/modules/csrf
 ln -s `pwd`/httpd_src/modules/csrf/Makefile.in httpd/modules/csrf
 
+rm -rf httpd/modules/clientid
+mkdir -p httpd/modules/clientid
+ln -s `pwd`/httpd_src/modules/clientid/mod_clientid.c httpd/modules/clientid
+ln -s `pwd`/httpd_src/modules/clientid/config.m4 httpd/modules/clientid
+ln -s `pwd`/httpd_src/modules/clientid/Makefile.in httpd/modules/clientid
+
 ADDMOD=""
 
 CFLAGS="-DDEFAULT_SERVER_LIMIT=512 -DDEFAULT_THREAD_LIMIT=256 -g -Wall -DI_INSIST_ON_EXTRA_CYCLES_FOR_CLF_COMPLIANCE"
@@ -51,7 +57,7 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-./configure --with-mpm=worker --enable-so --enable-csrf=shared --enable-proxy=shared --enable-ssl --enable-status=shared --enable-info=shared --enable-static-support --enable-unique-id --enable-unique-id=shared --enable-rewrite=shared --enable-dumpio=shared $ADDMOD
+./configure --with-mpm=worker --enable-so --enable-csrf=shared --enable-clientid=shared --enable-proxy=shared --enable-ssl --enable-status=shared --enable-info=shared --enable-static-support --enable-unique-id --enable-unique-id=shared --enable-rewrite=shared --enable-dumpio=shared $ADDMOD
 if [ $? -ne 0 ]; then
   echo "ERROR"
   exit 1

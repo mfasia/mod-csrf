@@ -34,26 +34,26 @@ if [ -n "$CFS" ]; then
   echo "FAILED found core file"
 fi
 
-grep \\$\\$\\$ ../httpd_src/modules/csrf/*.c
+grep \\$\\$\\$ ../httpd_src/modules/*/*.c
 if [ $? -ne 1 ]; then
   WARNINGS=`expr $WARNINGS + 1`
   echo "WARNING: found pattern '\$\$\$'"
 fi
 
-LINES=`grep fprintf ../httpd_src/modules/csrf/mod_csrf.c | grep -v "NOT FOR PRODUCTIVE USE" | grep -v "requires OpenSSL, compile Apache using" | wc -l | awk '{print $1}'`
+LINES=`grep fprintf ../httpd_src/modules/*/mod_*c | grep -v "NOT FOR PRODUCTIVE USE" | grep -v "requires OpenSSL, compile Apache using" | wc -l | awk '{print $1}'`
 if [ $LINES != "0" ]; then
   WARNINGS=`expr $WARNINGS + 1`
   echo "WARNING: found pattern 'fprintf'"
 fi
 
 if [ $WARNINGS -ne 0 ]; then
-    echo "ERROR: got $WARNINGS warnings and $ERRORS errors"
-    exit 1
+  echo "ERROR: got $WARNINGS warnings and $ERRORS errors"
+  exit 1
 fi
 
 if [ $ERRORS -ne 0 ]; then
-    echo "ERROR: end with $ERRORS errors"
-    exit 1
+  echo "ERROR: end with $ERRORS errors"
+  exit 1
 fi
 
 echo "normal end"

@@ -2,7 +2,7 @@
 # mod_csrf - Cross-site request forgery protection module
 #            for the Apache web server
 #
-# Copyright (C) 2012 Christoph Steigmeier, Pascal Buchbinder
+# Copyright (C) 2012-2014 Christoph Steigmeier, Pascal Buchbinder
 # 
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -51,7 +51,7 @@ DefaultType             text/plain
 AddType                 text/html .shtml
 AddOutputFilter         INCLUDES .shtml
 
-LogFormat               "%h %l %u %t \"%r\" %>s %{content-length}i %b \"%{User-Agent}i\" \"%{Referer}i\" %T id=%{UNIQUE_ID}e %{CSRF_ATTRIBUTE}e %{csrfpId}i #%P"
+LogFormat               "%h %l %u %t \"%r\" %>s %{content-length}i %b \"%{User-Agent}i\" \"%{Referer}i\" %T id=%{UNIQUE_ID}e %{CSRF_ATTRIBUTE}e %{csrfpId}i %{CLID_REC}e #%P"
 
 LogLevel                warn
 ErrorLog                ##ROOT##/logs/error_log
@@ -69,6 +69,7 @@ LoadModule              unique_id_module ##ROOT##/../httpd/modules/metadata/.lib
 LoadModule              proxy_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy.so
 LoadModule              proxy_http_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy_http.so
 LoadModule              csrf_module ##ROOT##/../httpd/modules/csrf/.libs/mod_csrf.so
+LoadModule              clientid_module ##ROOT##/../httpd/modules/clientid/.libs/mod_clientid.so
 LoadModule              setenvifplus_module ##ROOT##/../test/libexec/mod_setenvifplus.so
 LoadModule              parp_module ##ROOT##/../test/libexec/mod_parp.so
 LoadModule              qos_module ##ROOT##/../test/libexec/mod_qos.so
@@ -183,4 +184,19 @@ Listen                  127.0.0.1:##PORT_BASE3##
       RequestHeaderRemovePattern Accept-Encoding "(x-gzip|x-compress|x-deflate)[,; ]*"
       RequestHeaderRemovePattern Accept-Encoding "(gzip|compress|deflate)[,; ]*"
    </Location>
+</VirtualHost>
+
+Listen                  127.0.0.1:##PORT_BASE4##
+<VirtualHost 127.0.0.1:##PORT_BASE4##>
+   ServerName               server1
+   TransferLog              ##ROOT##/logs/access_log
+
+   SSLEngine                on
+   SSLCertificateKeyFile    ssl/server1.key.pem
+   SSLCertificateFile       ssl/server1.cert.pem
+   SSLCertificateChainFile  ssl/cacert.pem
+   SSLVerifyDepth           3
+
+   CLID_Cookie              123456 clid /cookie.html
+   CLID_Require             IP SSL Fingerprint
 </VirtualHost>

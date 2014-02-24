@@ -1,0 +1,7 @@
+
+include $(top_srcdir)/build/special.mk
+
+# use the -lcrypto option when loading mod_clientid as a DSO into
+# an Apache with dynamically loaded OpenSSL library (e.g. when not
+# using mod_ssl)
+SH_LDFLAGS += -lcrypto
