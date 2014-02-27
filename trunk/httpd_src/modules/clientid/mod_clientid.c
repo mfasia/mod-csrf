@@ -72,6 +72,10 @@ static const char g_revision[] = "0.0";
 #define CLID_DELIM_C '#'
 #define CLID_RND "CLID_RND"
 #define CLID_REC "CLID_REC"
+#define CLID_USR_SPE "mod_clientid::user"
+
+#define CLID_CHECK_URL "/res/clchk"
+#define CLID_MAXS      83886080
 
 #define CLID_FIX_FLAGS_IP     0x01
 #define CLID_FIX_FLAGS_SSLSID 0x02
@@ -93,18 +97,39 @@ static APR_OPTIONAL_FN_TYPE(ssl_var_lookup) *clid_ssl_var = NULL;
 /************************************************************************
  * structures
  ***********************************************************************/
+typedef enum  {
+  CLID_ACTION_NEW = 0,
+  CLID_ACTION_VERIFIED,
+  CLID_ACTION_RESET,
+  CLID_ACTION_RECHECK
+} clid_acton_e;
+
+
 typedef struct {
   char *ip;
   char *sslsid;
   char *fp;
   char *rnd;
+  apr_uint32_t id;
 } clid_rec_t;
 
 typedef struct {
-  int require;
-  const char *keyName;
-  const char *keyPath;
-  unsigned char key[EVP_MAX_KEY_LENGTH];
+  apr_global_mutex_t *lock;
+  apr_uint32_t *clientTable;
+  apr_uint32_t *clientTableIndex;
+  apr_shm_t *m; 
+  apr_pool_t *pool;
+} clid_user_t;
+
+typedef struct {
+  // global, internal config:
+  char *lockFile;
+  // per vhost user config:
+  int require;                           // policy
+  const char *keyName;                   // cookie name
+  const char *keyPath;                   // cookie check path
+  unsigned char key[EVP_MAX_KEY_LENGTH]; // secret
+  const char *check;                     // etag check path
 } clid_config_t;
 
 /************************************************************************
@@ -193,6 +218,58 @@ static apr_uint32_t clid_crc32(const char *data, const apr_size_t data_len) {
     crc = (crc >> 8) ^ clid_crc32tab[(crc ^ (data[i])) & 0xff];
   
   return ~crc;
+}
+
+/**
+ * Returns the persistent configuration (restarts)
+ *
+ * @param s To fetch the process pool (s->process->pool)
+ * @return
+ */
+static clid_user_t *clid_get_user_conf(server_rec *s) {
+  void *v;
+  clid_user_t *u;
+  apr_pool_t *ppool = s->process->pool;
+  apr_pool_userdata_get(&v, CLID_USR_SPE, ppool);
+  if(v) {
+    return v;
+  }
+  u = (clid_user_t *)apr_pcalloc(ppool, sizeof(clid_user_t));
+  apr_pool_userdata_set(u, CLID_USR_SPE, apr_pool_cleanup_null, ppool);
+  u->lock = NULL;
+  u->clientTable = NULL;
+  u->clientTableIndex = NULL;
+  u->m = NULL;
+  apr_pool_create(&u->pool, ppool);
+  return u;
+}
+
+static void clid_table_set(clid_user_t *u, apr_uint32_t id) {
+  int i = id / 32;
+  int pos = id % 32;
+  unsigned int flag = 1;
+  flag = flag << pos;
+  u->clientTableIndex[i] |= flag;
+}
+
+static void clid_table_clear(clid_user_t *u, apr_uint32_t id) {
+  int i = id / 32;
+  int pos = id % 32;
+  unsigned int flag = 1;
+  flag = flag << pos;
+  flag = ~flag;
+  u->clientTableIndex[i] &= flag;
+}
+
+static int clid_table_test(clid_user_t *u, apr_uint32_t id) {
+  int i = id / 32;
+  int pos = id % 32;
+   unsigned int flag = 1;
+   flag = flag << pos;
+   if(u->clientTableIndex[i] & flag) {
+     return 1;
+   }
+   return 0;
 }
 
 /**
@@ -330,7 +407,7 @@ static char *clid_dec64(request_rec *r, const char *str, unsigned char *key) {
  failed:
   EVP_CIPHER_CTX_cleanup(&cipher_ctx);
   ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
-                CLID_LOG_PFX(010)"Failed to decrypt data. (%s)", str ? str : "");
+                CLID_LOGD_PFX"Failed to decrypt data. (%s)", str ? str : "");
   return NULL;
 }
 
@@ -379,7 +456,7 @@ static char *clid_enc64(request_rec *r, const char *str, unsigned char *key) {
 failed:
   EVP_CIPHER_CTX_cleanup(&cipher_ctx);
   ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
-                CLID_LOG_PFX(011)"Failed to encrypt data.");
+                CLID_LOGD_PFX"Failed to encrypt data.");
   return "";
 }
 
@@ -531,24 +608,39 @@ static char *clid_clientfp(request_rec *r, const char *data) {
  * fingerprint and a random client id.
  *
  * @param r
- * @param rnd Esting random which shall be re-used (optional)
+ * @param rnd Existing random which shall be re-used (optional)
+ * @param id Used together with an existing radnom
  * @return New client record
  */
-static clid_rec_t *clid_create_rec(request_rec *r, const char *rnd) {
+static clid_rec_t *clid_create_rec(request_rec *r, const char *rnd, apr_uint32_t id) {
   clid_rec_t *rec = apr_pcalloc(r->pool, sizeof(clid_rec_t));
   rec->ip = apr_pstrdup(r->pool, SF_CONN_REMOTEIP(r));
   rec->sslsid = clid_getsslsid(r);
   rec->fp = clid_clientfp(r, NULL);
   if(rnd) {
     rec->rnd = apr_pstrdup(r->pool, rnd);
+    rec->id = id;
   } else {
+    clid_user_t *u = clid_get_user_conf(r->server);
     rec->rnd = clid_func_RND(r->pool, 24);
+    apr_global_mutex_lock(u->lock);          /* @CRT01 */
+    rec->id = *u->clientTableIndex;
+    *u->clientTableIndex = rec->id + 1;
+    if(*u->clientTableIndex == CLID_MAXS) {
+      /* reuse existing entries - we may have clients still using them!!!
+         => todo: implement an expiration timeout and track free entries 
+         =>       and handle server restarts */
+      *u->clientTableIndex = 0;
+    }
+    clid_table_clear(u, rec->id);
+    apr_global_mutex_unlock(u->lock);        /* @CRT01 */
   }
   return rec;
 }
 
 static clid_rec_t *clid_rec_d2i(apr_pool_t *pool, const char *str) {
   clid_rec_t *rec = apr_pcalloc(pool, sizeof(clid_rec_t));
+  char *id;
   rec->ip = apr_pstrdup(pool, str);
   rec->sslsid = strchr(rec->ip, CLID_DELIM_C);
   rec->sslsid[0] = '\0';
@@ -559,15 +651,20 @@ static clid_rec_t *clid_rec_d2i(apr_pool_t *pool, const char *str) {
   rec->rnd = strchr(rec->fp, CLID_DELIM_C);
   rec->rnd[0] = '\0';
   rec->rnd++;
+  id = strchr(rec->rnd, CLID_DELIM_C);
+  id[0] = '\0';
+  id++;
+  rec->id = atoi(id);
   return rec;
 }
 
 static char *clid_rec_i2d(apr_pool_t *pool, clid_rec_t *rec) {
-  char *id = apr_psprintf(pool, "%s"CLID_DELIM"%s"CLID_DELIM"%s"CLID_DELIM"%s",
+  char *id = apr_psprintf(pool, "%s"CLID_DELIM"%s"CLID_DELIM"%s"CLID_DELIM"%s"CLID_DELIM"%u",
                           rec->ip,
                           rec->sslsid,
                           rec->fp,
-                          rec->rnd);
+                          rec->rnd,
+                          rec->id);
   return id;
 }
 
@@ -576,16 +673,18 @@ static char *clid_rec_i2d(apr_pool_t *pool, clid_rec_t *rec) {
  *
  * @param r
  * @param conf
- * @return DECLINED or HTTP_MOVED_TEMPORARILY (cookie check/renew)
+ * @return DECLINED or 30x (cookie check/renew/recheck)
  */
 static int clid_setid(request_rec *r, clid_config_t *conf) {
   if(!ap_is_initial_req(r)) {
     return DECLINED;
   }
   if(conf->keyName) {
+    clid_user_t *u = clid_get_user_conf(r->server);
     char *cookie = clid_get_remove_cookie(r, conf->keyName);
     char *verified = NULL;
     clid_rec_t *rec = NULL;
+    clid_acton_e action = CLID_ACTION_NEW;
     if(cookie) {
       verified = clid_dec64(r, cookie, conf->key);
     }
@@ -593,8 +692,9 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
       int require = 0;
       int changed = 0;
       clid_rec_t *newrec;
+      action = CLID_ACTION_VERIFIED;
       rec = clid_rec_d2i(r->pool, verified);
-      newrec = clid_create_rec(r, rec->rnd);
+      newrec = clid_create_rec(r, rec->rnd, rec->id);
       if(conf->require & CLID_FIX_FLAGS_IP) {
         require++;
         if(strcmp(rec->ip, newrec->ip)) {
@@ -619,17 +719,20 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
       if(changed > 0) {
         if(changed >= require) {
           // rule violation
-          // TODO
+          action = CLID_ACTION_RECHECK;
         } else {
           // renew cookie
-          // TODO
+          action = CLID_ACTION_RESET;
         }
       }
       apr_table_set(r->subprocess_env, CLID_RND, rec->rnd);
       apr_table_set(r->subprocess_env, CLID_REC, verified);
     }
+
+    /* 
+     * cookie check page
+     */
     if(r->parsed_uri.path && (strcmp(conf->keyPath, r->parsed_uri.path) == 0)) {
-      /* cookie check page */
       if(verified && 
          r->parsed_uri.query &&  (strncmp(r->parsed_uri.query, "r=", 2) == 0)) {
         /* client has send a cookie, redirect to original url */
@@ -642,31 +745,81 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
           apr_table_set(r->headers_out, "Location", redirect_page);
           return HTTP_TEMPORARY_REDIRECT;
         }
-      } // else: return the cookie check page
-    } else {
-      if(!verified) {
-        /* new request, create a cookie */
-        clid_rec_t *rec = clid_create_rec(r, NULL);
-        char *payload = clid_rec_i2d(r->pool, rec);
-        char *sc = apr_pstrcat(r->pool,
-                               conf->keyName, "=",
-                               clid_enc64(r, payload, conf->key), "; httpOnly",
-                               NULL);
-        char *redirect_page = apr_pstrcat(r->pool, clid_this_host(r),
-                                          conf->keyPath,
-                                          "?r=",
-                                          clid_enc64(r, r->unparsed_uri, conf->key),
-                                          NULL);
-        apr_table_set(r->subprocess_env, CLID_RND, rec->rnd);
-        apr_table_set(r->subprocess_env, CLID_REC, verified);
-        apr_table_set(r->headers_out, "Location", redirect_page);
-        apr_table_add(r->err_headers_out, "Set-Cookie", sc);
-        ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
-                      CLID_LOGD_PFX"create new id %s", payload);
-        return HTTP_TEMPORARY_REDIRECT;
-        //return HTTP_MOVED_TEMPORARILY;
+      } else {
+        // return the cookie check page
+        return DECLINED;
       }
     }
+
+    /*
+     * new client, no cookie
+     */
+    if(action == CLID_ACTION_NEW) {
+      /* new request, create a cookie */
+      clid_rec_t *rec = clid_create_rec(r, NULL, 0);
+      char *payload = clid_rec_i2d(r->pool, rec);
+      char *sc = apr_pstrcat(r->pool,
+                             conf->keyName, "=",
+                             clid_enc64(r, payload, conf->key), "; httpOnly",
+                             NULL);
+      char *redirect_page = apr_pstrcat(r->pool, clid_this_host(r),
+                                        conf->keyPath,
+                                        "?r=",
+                                        clid_enc64(r, r->unparsed_uri, conf->key),
+                                        NULL);
+      apr_table_set(r->subprocess_env, CLID_RND, rec->rnd);
+      apr_table_set(r->subprocess_env, CLID_REC, verified);
+      apr_table_set(r->headers_out, "Location", redirect_page);
+      apr_table_add(r->err_headers_out, "Set-Cookie", sc);
+      ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
+                    CLID_LOGD_PFX"Create new id [%s].", payload);
+      return HTTP_TEMPORARY_REDIRECT;
+      //return HTTP_MOVED_TEMPORARILY;
+    }
+
+    /*
+     * etag check path
+     */
+    if(r->parsed_uri.path && (strcmp(conf->check, r->parsed_uri.path) == 0)) {
+      if(action == CLID_ACTION_VERIFIED) {
+        /* first request with a matching cookie:
+         * - set tag
+         * - redirect to orignal page */
+        // TODO
+      }
+      if(action == CLID_ACTION_RECHECK) {
+        /* followup request
+         * - check tag
+         * - redirect to orignal page if tag was correct and set new cookie
+         */
+        // TODO
+        // failed: show page and clear cookie
+        // TODO
+        return DECLINED;
+      }
+    }
+
+    /*
+     * lock request or recheck etag
+     */
+    if(action == CLID_ACTION_RECHECK) {
+      int checkRunning = 0;
+      apr_global_mutex_lock(u->lock);          /* @CRT02 */
+      checkRunning = clid_table_test(u, rec->id);
+      apr_global_mutex_unlock(u->lock);        /* @CRT02 */
+      if(checkRunning) {
+      } else {
+      }
+      // TODO
+    }
+
+    /*
+     * some parameters have changed, recreate the attributes
+     */
+    if(action == CLID_ACTION_RESET) {
+      // TODO
+    }
+
   }
   return DECLINED;
 }
@@ -687,15 +840,87 @@ static int clid_post_read_request(request_rec *r) {
   return DECLINED;
 }
 
+static int clid_verify_config(apr_pool_t *pconf, server_rec *bs) {
+  server_rec *s = bs;
+  while(s) {
+    clid_config_t *conf = ap_get_module_config(s->module_config, &clientid_module);
+    if(conf->keyName != NULL && conf->lockFile == NULL) {
+      ap_log_error(APLOG_MARK, APLOG_EMERG, 0, bs, 
+                   CLID_LOG_PFX(003)"CLID_SemFile directive has not been defined.");
+      return 0;
+    }
+    s = s->next;
+  }
+  // OK
+  return 1;
+}
+
 /** finalize configuration */
+static void clid_config_test(apr_pool_t *pconf, server_rec *bs) {
+  clid_verify_config(pconf, bs);
+}
+
+static void clid_child_init(apr_pool_t *p, server_rec *bs) {
+  clid_config_t *conf = ap_get_module_config(bs->module_config, &clientid_module);
+  clid_user_t *u = clid_get_user_conf(bs);
+  if(conf && u->lock) {
+    apr_global_mutex_child_init(&u->lock, conf->lockFile, p);
+  }
+}
+
 static int clid_post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp,
                             server_rec *bs) {
+  clid_config_t *conf = ap_get_module_config(bs->module_config, &clientid_module);
   ap_add_version_component(pconf, apr_psprintf(pconf, "mod_clientid/%s", g_revision));
   clid_is_https = APR_RETRIEVE_OPTIONAL_FN(ssl_is_https);
   clid_ssl_var = APR_RETRIEVE_OPTIONAL_FN(ssl_var_lookup);
   if(!clid_is_https) {
     ap_log_error(APLOG_MARK, APLOG_CRIT, 0, bs, 
-                 CLID_LOG_PFX(001)"mod_ssl not available");
+                 CLID_LOG_PFX(001)"mod_ssl not available!");
+  }
+  clid_config_test(pconf, bs);
+  if(!clid_verify_config(pconf, bs)) {
+    exit(1);
+  }
+  if(conf->lockFile) {
+    clid_user_t *u = clid_get_user_conf(bs);
+    apr_uint32_t i;
+    if(u->lock == NULL) {
+      char *semFile = apr_psprintf(u->pool, "%s.m", conf->lockFile);
+      int bits = sizeof(apr_uint32_t) * 8;
+      int msize = APR_ALIGN_DEFAULT(sizeof(apr_uint32_t) * CLID_MAXS / bits + sizeof(apr_uint32_t));
+      int rv;
+      ap_log_error(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, bs,
+                   CLID_LOGD_PFX"Allocates shared memory, %d bytes.", msize);
+
+      rv = apr_global_mutex_create(&u->lock, conf->lockFile,
+                                   APR_LOCK_DEFAULT, u->pool);
+      if(rv != APR_SUCCESS) {
+        char buf[MAX_STRING_LEN];
+        apr_strerror(rv, buf, sizeof(buf));
+        ap_log_error(APLOG_MARK, APLOG_EMERG, 0, bs, 
+                     CLID_LOG_PFX(002)"Failed to create mutex (%s): %s.",
+                     conf->lockFile, buf);
+        exit(1);
+      }
+      //rv = apr_shm_create(&u->m, msize + 1024, NULL, u->pool);
+      apr_shm_remove(semFile, u->pool);
+      rv = apr_shm_create(&u->m, msize + 1024, semFile, u->pool);
+      if(rv != APR_SUCCESS) {
+        char buf[MAX_STRING_LEN];
+        apr_strerror(rv, buf, sizeof(buf));
+        ap_log_error(APLOG_MARK, APLOG_EMERG, 0, bs, 
+                     CLID_LOG_PFX(002)"Failed to create shared memory (%s %d): %s.",
+                     conf->lockFile, msize, buf);
+        exit(1);
+      }
+      u->clientTableIndex = apr_shm_baseaddr_get(u->m);
+      u->clientTable = u->clientTableIndex;
+      u->clientTable++;
+      for(i = 0; i < CLID_MAXS/bits; i++) {
+        u->clientTable[i] = 0;
+      }
+    }
   }
   return DECLINED;
 }
@@ -705,9 +930,11 @@ static int clid_post_config(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *pte
  ***********************************************************************/
 static void *clid_srv_config_create(apr_pool_t *p, server_rec *s) {
   clid_config_t *sconf = apr_pcalloc(p, sizeof(clid_config_t));
+  sconf->lockFile = NULL;
   sconf->require = 0;
   sconf->keyName = NULL;
   sconf->keyPath = NULL;
+  sconf->check = apr_pstrdup(p, CLID_CHECK_URL);
   return sconf;
 }
 
@@ -715,6 +942,8 @@ static void *clid_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
   clid_config_t *sconf = apr_pcalloc(p, sizeof(clid_config_t));
   clid_config_t *base = basev;
   clid_config_t *add = addv;
+
+  sconf->lockFile = base->lockFile;
 
   if(add->keyName) {
     sconf->require = add->require;
@@ -727,7 +956,29 @@ static void *clid_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
     sconf->keyPath = base->keyPath;
     memcpy(sconf->key, base->key, EVP_MAX_KEY_LENGTH);
   }
+  if(strcmp(add->check, CLID_CHECK_URL) != 0) {
+    sconf->check = add->check;
+  } else {
+    sconf->check = base->check;
+  }
+
   return sconf;
+}
+
+const char *clid_semfile_cmd(cmd_parms *cmd, void *dcfg, const char *path) {
+  clid_config_t *conf = ap_get_module_config(cmd->server->module_config, &clientid_module);
+  const char *err = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+  if (err != NULL) {
+    return err;
+  }
+  conf->lockFile = ap_server_root_relative(cmd->pool, path);
+  return NULL;
+}
+
+const char *clid_check_cmd(cmd_parms *cmd, void *dcfg, const char *path) {
+  clid_config_t *conf = ap_get_module_config(cmd->server->module_config, &clientid_module);
+  conf->check = apr_pstrdup(cmd->pool, path);
+  return NULL;
 }
 
 const char *clid_cookie_attr_cmd(cmd_parms *cmd, void *dcfg, const char *secret,
@@ -744,15 +995,15 @@ const char *clid_require_cmd(cmd_parms *cmd, void *dcfg, const char *attr) {
   clid_config_t *conf = ap_get_module_config(cmd->server->module_config, &clientid_module);
   if(strcasestr(attr, "ip")) {
     conf->require |= CLID_FIX_FLAGS_IP;
-    printf("ip\n");
   }
   if(strcasestr(attr, "ssl")) {
     conf->require |= CLID_FIX_FLAGS_SSLSID;
-    printf("ssl\n");
   }
   if(strcasestr(attr, "fingerprint")) {
     conf->require |= CLID_FIX_FLAGS_FP;
-    printf("fp\n");
+  }
+  if(strcasestr(attr, "fp")) {
+    conf->require |= CLID_FIX_FLAGS_FP;
   }
   return NULL;
 }
@@ -761,9 +1012,15 @@ static const command_rec clid_config_cmds[] = {
   AP_INIT_TAKE3("CLID_Cookie", clid_cookie_attr_cmd, NULL,
                 RSRC_CONF,
                 "CLID_Cookie <secret> <cookie name> <check path>"),
+  AP_INIT_TAKE1("CLID_Check", clid_check_cmd, NULL,
+                RSRC_CONF,
+                "CLID_Check <path>"),
   AP_INIT_ITERATE("CLID_Require", clid_require_cmd, NULL,
                   RSRC_CONF,
                   "CLID_Require <attrinute>"),
+  AP_INIT_TAKE1("CLID_SemFile", clid_semfile_cmd, NULL,
+                RSRC_CONF,
+                "CLID_SemFile <path>"),
   { NULL }
 };
 
@@ -775,6 +1032,8 @@ static void clid_register_hooks(apr_pool_t * p) {
   static const char *post[] = { "mod_headers.c", NULL };
   ap_hook_post_read_request(clid_post_read_request, pre, post, APR_HOOK_MIDDLE);
   ap_hook_post_config(clid_post_config, pre, NULL, APR_HOOK_MIDDLE);
+  ap_hook_child_init(clid_child_init, NULL, NULL, APR_HOOK_MIDDLE);
+  ap_hook_test_config(clid_config_test, NULL,NULL, APR_HOOK_MIDDLE);
 }
 
 /************************************************************************
