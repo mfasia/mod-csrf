@@ -64,36 +64,6 @@ __
 _EXPECT . "start page 3"
 _EXPECT . "200 OK"
 _WAIT
-
-#
-# one attribute (FP) changes => expect new cookie
-#
-_SSL:SET_SESSION $SIL
-_REQ server1 SSL:$PORT_BASE4
-__GET $LOCATION HTTP/1.1
-__Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 <CHANGED FP>
-__Cookie: clid=$COOKIE
-__Req: 05
-__
-_EXPECT . "Set-Cookie"
-_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
-_EXPECT . "start page 3"
-_EXPECT . "200 OK"
-_WAIT
-_CLOSE
-
-_SSL:SET_SESSION $SIL
-_REQ server1 SSL:$PORT_BASE4
-__GET $LOCATION HTTP/1.1
-__Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 <CHANGED FP>
-__Cookie: clid=$COOKIE
-__Req: 06
-__
-_EXPECT . "start page 3"
-_EXPECT . "200 OK"
-_WAIT
 _CLOSE
 
 #
@@ -102,38 +72,46 @@ _CLOSE
 _REQ server1 SSL:$PORT_BASE4
 __GET $LOCATION HTTP/1.1
 __Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 <CHANGED FP CHANED AGAIN>
+__User-Agent: Mozilla 1.0 <CHANGED FP CHANGED>
 __Cookie: clid=$COOKIE
-__Req: 07
+__Req: 05
 __
 _MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
 _MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
 _EXPECT . "Location.*/check"
+_EXPECT . "!Set-Cookie: clid="
 _WAIT
-_SSL:GET_SESSION SIL
+_SSL:GET_SESSION SIL2
 _CLOSE
 
-# check without etag:
-_SSL:SET_SESSION $SIL
+#
+# ignore redirect: request waits till timeout
+#
+_SSL:SET_SESSION $SIL2
 _REQ server1 SSL:$PORT_BASE4
-__GET $LOCATION HTTP/1.1
+__GET /index3.html HTTP/1.1
 __Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 <CHANGED FP CHANED AGAIN>
+__User-Agent: Mozilla 1.0 <CHANGED FP CHANGED>
 __Cookie: clid=$COOKIE; clidchk=$COOKIE2
-__Req: 08
+__Req: 06
 __
-_EXPECT . "Your session has been invalidated due to an unexpected behavior of your browser."
+_EXPECT . "307 Temporary Redirect"
 _WAIT
 _CLOSE
+_SLEEP 100
+_EXPECT EXEC "mod_clientid\(020\): Timeout while waiting for Etag check"
+_EXEC tail -1 logs/error_log
+_EXPECT EXEC "GET /index3.html HTTP/1.1\" 307 - 242 \"Mozilla 1.0 <CHANGED FP CHANGED>\" ... 1[01] "
+_EXEC tail -1 logs/access_log
 
-_SSL:SET_SESSION $SIL
+_SSL:SET_SESSION $SIL2
 _REQ server1 SSL:$PORT_BASE4
 __GET $LOCATION HTTP/1.1
 __Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 <CHANGED FP CHANED AGAIN>
+__User-Agent: Mozilla 1.0 <CHANGED FP CHANGED>
 __Cookie: clid=$COOKIE; clidchk=$COOKIE2
 __If-None-Match: $ETAG
-__Req: 09
+__Req: 07
 __
 _MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
 _MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
@@ -141,15 +119,37 @@ _EXPECT . "Location.*/index"
 _WAIT
 _CLOSE
 
-_SSL:SET_SESSION $SIL
+_SSL:SET_SESSION $SIL2
 _REQ server1 SSL:$PORT_BASE4
 __GET $LOCATION HTTP/1.1
 __Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 <CHANGED FP CHANED AGAIN>
+__User-Agent: Mozilla 1.0 <CHANGED FP CHANGED>
+__Cookie: clid=$COOKIE
+__Req: 08
+__
+_EXPECT . "start page 3"
+_WAIT
+
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 <CHANGED FP CHANGED AGAIN>
+__Cookie: clid=$COOKIE
+__Req: 09
+__
+_EXPECT . "start page 3"
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
+_WAIT
+
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 <CHANGED FP CHANGED AGAIN>
 __Cookie: clid=$COOKIE
 __Req: 10
 __
 _EXPECT . "start page 3"
+_EXPECT . "!Set-Cookie"
 _WAIT
 _CLOSE
 

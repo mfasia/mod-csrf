@@ -75,6 +75,8 @@ LoadModule              parp_module ##ROOT##/../test/libexec/mod_parp.so
 LoadModule              qos_module ##ROOT##/../test/libexec/mod_qos.so
 LoadModule              rewrite_module ##ROOT##/../httpd/modules/mappers/.libs/mod_rewrite.so
 
+CLID_SemFile logs/sem
+
 Listen                  127.0.0.1:##PORT_BASE##
 <VirtualHost 127.0.0.1:##PORT_BASE##>
    ServerName             127.0.0.1
@@ -197,6 +199,9 @@ Listen                  127.0.0.1:##PORT_BASE4##
    SSLCertificateChainFile  ssl/cacert.pem
    SSLVerifyDepth           3
 
+   CSRF_Enable              off
+
    CLID_Cookie              123456 clid /cookie.html
-   CLID_Require             IP SSL Fingerprint
+   CLID_Require             SSL Fingerprint
+   CLID_Check               /error/check
 </VirtualHost>
