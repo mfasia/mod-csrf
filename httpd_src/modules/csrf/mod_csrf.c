@@ -762,24 +762,30 @@ static csrf_req_ctx *csrf_get_rctx(request_rec *r) {
 static apr_status_t csrf_out_filter(ap_filter_t *f, apr_bucket_brigade *bb) {
   request_rec *r = f->r;
   /*
-   * adds the id to redirects (30x, location header) if CSRF_REDIRECT variable has been set
+   * adds the id to redirects (30x, location header) if CSRF_REDIRECT
+   * variable has been set
+   * e.g. "ResponseSetEnvIfPlus Location <our hostname> CSRF_REDIRECT"
    */
   if(apr_table_get(r->subprocess_env, CSRF_REDIRECT)) {
-    csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
+    csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config,
+                                                    &csrf_module);
     int err = 0;
     const char *location = apr_table_get(r->headers_out, "Location");
     if(!location) {
       err = 1;
       location = apr_table_get(r->err_headers_out, "Location");
     }
-    if(location) {
-      if(strchr(location, '?')) {
-        location = apr_pstrcat(r->pool, location, "&", 
-                               sconf->id, "=", csrf_create_id(r), NULL);
-        if(err) {
-          apr_table_set(r->err_headers_out, "Location", location);
-        } else {
-          apr_table_set(r->headers_out, "Location", location);
+    if(location) { // is redirect
+      if(strchr(location, '?')) { // has query
+        char *name = apr_pstrcat(r->pool, sconf->id, "=", NULL);
+        if(strstr(location, name) == NULL) { // add only once
+          location = apr_pstrcat(r->pool, location, "&", 
+                                 name, csrf_create_id(r), NULL);
+          if(err) {
+            apr_table_set(r->err_headers_out, "Location", location);
+          } else {
+            apr_table_set(r->headers_out, "Location", location);
+          }
         }
       }
     }
@@ -1292,7 +1298,7 @@ static void csrf_register_hooks(apr_pool_t * p) {
   ap_hook_fixups(csrf_fixup, pre, NULL, APR_HOOK_MIDDLE);
   ap_hook_post_config(csrf_post_config, pre, NULL, APR_HOOK_MIDDLE);
   ap_register_output_filter("csrf_out_filter_body", csrf_out_filter_body, NULL, AP_FTYPE_RESOURCE);
-  ap_register_output_filter("csrf_out_filter", csrf_out_filter, NULL, AP_FTYPE_RESOURCE);
+  ap_register_output_filter("csrf_out_filter", csrf_out_filter, NULL, AP_FTYPE_RESOURCE+1);
   ap_hook_insert_filter(csrf_insert_filter, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
