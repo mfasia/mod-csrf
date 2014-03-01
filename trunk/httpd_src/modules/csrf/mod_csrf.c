@@ -5,7 +5,7 @@
  * mod_csrf - Cross-site request forgery protection module for
  *            the Apache web server
  *
- * Copyright (C) 2012-2013 Christoph Steigmeier, Pascal Buchbinder
+ * Copyright (C) 2012-2014 Christoph Steigmeier, Pascal Buchbinder
  * 
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -25,7 +25,7 @@
 /************************************************************************
  * Version
  ***********************************************************************/
-static const char g_revision[] = "0.3";
+static const char g_revision[] = "0.4";
 
 /************************************************************************
  * Includes
@@ -68,6 +68,7 @@ static const char g_revision[] = "0.3";
 #define CSRF_IGNORE_PATTERN ".*(jpg)|(jpeg)|(gif)|(png)|(js)|(css)$"
 #define CSRF_IGNORE_CACHE "mod_csrf::ignore"
 #define CSRF_IGNORE "CSRF_IGNORE"
+#define CSRF_REDIRECT "CSRF_REDIRECT"
 
 #define CSRF_QUERYID "csrfpId"
 #define CSRF_WIN 8
@@ -758,6 +759,36 @@ static csrf_req_ctx *csrf_get_rctx(request_rec *r) {
  * handlers
  ***********************************************************************/
 
+static apr_status_t csrf_out_filter(ap_filter_t *f, apr_bucket_brigade *bb) {
+  request_rec *r = f->r;
+  /*
+   * adds the id to redirects (30x, location header) if CSRF_REDIRECT variable has been set
+   */
+  if(apr_table_get(r->subprocess_env, CSRF_REDIRECT)) {
+    csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
+    int err = 0;
+    const char *location = apr_table_get(r->headers_out, "Location");
+    if(!location) {
+      err = 1;
+      location = apr_table_get(r->err_headers_out, "Location");
+    }
+    if(location) {
+      if(strchr(location, '?')) {
+        location = apr_pstrcat(r->pool, location, "&", 
+                               sconf->id, "=", csrf_create_id(r), NULL);
+        if(err) {
+          apr_table_set(r->err_headers_out, "Location", location);
+        } else {
+          apr_table_set(r->headers_out, "Location", location);
+        }
+      }
+    }
+  }
+  // done, header only
+  ap_remove_output_filter(f);
+  return ap_pass_brigade(f->next, bb);
+}
+
 /**
  * Out filter to inject our java script to every html page
  */
@@ -1052,6 +1083,10 @@ static int csrf_post_config(apr_pool_t *pconf, apr_pool_t *plog,
   return DECLINED;
 }
 
+static void csrf_insert_filter(request_rec *r) {
+  ap_add_output_filter("csrf_out_filter", NULL, r, r->connection);
+}
+
 /************************************************************************
  * directiv handlers 
  ***********************************************************************/
@@ -1257,6 +1292,8 @@ static void csrf_register_hooks(apr_pool_t * p) {
   ap_hook_fixups(csrf_fixup, pre, NULL, APR_HOOK_MIDDLE);
   ap_hook_post_config(csrf_post_config, pre, NULL, APR_HOOK_MIDDLE);
   ap_register_output_filter("csrf_out_filter_body", csrf_out_filter_body, NULL, AP_FTYPE_RESOURCE);
+  ap_register_output_filter("csrf_out_filter", csrf_out_filter, NULL, AP_FTYPE_RESOURCE);
+  ap_hook_insert_filter(csrf_insert_filter, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
 /************************************************************************
