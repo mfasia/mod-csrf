@@ -128,6 +128,8 @@ Listen                  127.0.0.1:##PORT_BASE##
    <Location />
       SetEnvIfPlus Host (.*):[0-9]+     CSRF_ATTRIBUTE=$1
       SetEnvIfPlus mod_qos_user_id (.*) CSRF_ATTRIBUTE=${CSRF_ATTRIBUTE}:$1
+
+      ResponseSetEnvIfPlus Location 127.0.0.1 CSRF_REDIRECT
    </Location>
 
 </VirtualHost>
