@@ -87,6 +87,7 @@ Downloads are handled by
 
 
 <h2>Module Directives</h2>
+<p>
 <ul>
 <a name="CLID_Cookie"></a>
 <li><code>CLID_Cookie &lt;secret&gt; &lt;cookie name&gt; &lt;check path&gt;</code><br/>
@@ -112,15 +113,40 @@ File path wihin the server's file system to create the lock file
 for semaphore/mutex.
 </li>
 </ul>
+</p>
 
 <h2>Module Variables</h2>
+<p>
 <ul>
 <li>
 <code>CLID_RND</code> <br/>
 Contains the session secret.
 </li>
 </ul>
+</p>
 
+<h2>Sample Configuration</h2>
+<p>
+<table border="0" cellspacing="5" cellpadding="10" width="100%">
+<tr><td bgcolor="#E0E0E5">
+<pre>
+# Specifies a secret and the name of the cooke (clid).
+# The page /cookie.html is shown to clients not accepting cookies.
+CLID_Cookie              123456 clid /cookie.html
+
+# The IP address and SSL session id must not change at once.
+CLID_Require             IP SSL
+
+# The path to the ETag check.
+CLID_Check               /error/check
+
+# Use the secret to encrypt the JSESSIONID cookie.
+SetEnvIfPlus             CLID_RND (.*) SP_COOKIE_KEY=$1
+CookieEncPlus            JSESSIONID
+</pre>
+</td></tr>
+</table>
+</p>
 
   </td>
   <td>&nbsp;</td>
