@@ -50,13 +50,34 @@ cp doc/csrf.jpg mod_csrf-${VERSION}/doc/
 cp test/htdocs/csrf.js mod_csrf-${VERSION}/htdocs/
 
 echo "install source"
-cp httpd_src/modules/csrf/mod_csrf.c mod_csrf-${VERSION}/apache2
-grep -v csrf_control httpd_src/modules/csrf/config.m4 > mod_csrf-${VERSION}/apache2/config.m4
-cp httpd_src/modules/csrf/Makefile.in mod_csrf-${VERSION}/apache2
+cp httpd_src/modules/csrf/mod_csrf.c mod_csrf-${VERSION}/apache2/
+cp httpd_src/modules/csrf/config.m4 mod_csrf-${VERSION}/apache2/
+cp httpd_src/modules/csrf/Makefile.in mod_csrf-${VERSION}/apache2/
 
 echo "package: mod_csrf-${VERSION}.tar.gz"
 tar cf mod_csrf-${VERSION}.tar --owner root --group bin mod_csrf-${VERSION}
 gzip mod_csrf-${VERSION}.tar
 rm -r mod_csrf-${VERSION}
+
+VERSION=`grep "char g_revision" httpd_src/modules/clientid/mod_clientid.c | awk '{print $6}' | awk -F'"' '{print $2}'`
+echo "build mod_clientid version $VERSION distribution package"
+
+rm -rf mod_clientid-${VERSION}*
+mkdir -p mod_clientid-${VERSION}/doc
+mkdir -p mod_clientid-${VERSION}/apache2
+
+echo "install documentation"
+cp doc/LICENSE.txt mod_clientid-${VERSION}/doc/
+cp doc/clientid.html mod_clientid-${VERSION}/doc/index.html
+
+echo "install source"
+cp httpd_src/modules/clientid/mod_clientid.c mod_clientid-${VERSION}/apache2/
+cp httpd_src/modules/clientid/config.m4 mod_clientid-${VERSION}/apache2/
+cp httpd_src/modules/clientid/Makefile.in mod_clientid-${VERSION}/apache2/
+
+echo "package: mod_clientid-${VERSION}.tar.gz"
+tar cf mod_clientid-${VERSION}.tar --owner root --group bin mod_clientid-${VERSION}
+gzip mod_clientid-${VERSION}.tar
+rm -r mod_clientid-${VERSION}
 
 echo "normal end"
