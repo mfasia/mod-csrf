@@ -1,0 +1,161 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+  <head>
+    <title>mod_clientid</title>
+    <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+    <meta name="author" content="Pascal Buchbinder">
+    <meta name="KeyWords" content="Apache Web Server, Open Source Software" />
+    <link rel="shortcut icon" href="favicon.ico" />
+    <style TYPE="text/css">
+    <!--  
+      body {
+    	background-color: white;
+    	color: black;
+    	font-family: arial, helvetica, verdana, sans-serif;
+    	font-weight: normal;
+    	text-align: left;
+      }
+      a:link    { color: rgb(95,10,15); }
+      a:visited { color:black; }
+      a:focus   { color:black; text-decoration:underline; }
+      a:hover   { color:black; text-decoration:none; }
+      a:active  { color:black; text-decoration:underline; }
+    -->
+    </style>
+  </head>
+
+  <body>
+  <!--
+  mod_clientid - Per client session identifier module
+                 for the Apache web server.
+ 
+  Copyright (C) 2014 Pascal Buchbinder
+ 
+  This library is free software; you can redistribute it and/or
+  modify it under the terms of the GNU Lesser General Public
+  License as published by the Free Software Foundation; either
+  version 2.1 of the License, or (at your option) any later version.
+  
+  This library is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  Lesser General Public License for more details.
+  
+  You should have received a copy of the GNU Lesser General Public
+  License along with this library; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+  -->
+
+<table>
+<tbody>
+<tr>
+  <td colspan="2"><img src="clientid.png" alt="mod_clientid"></td>
+  <td>&nbsp;</td>
+</tr>
+<tr>
+  <td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+  <td>
+
+  <p>
+mod_clientid may be used to create a session secret which is stored at 
+the browser within a <i>Cookie</i>. The module tries to ensure that this 
+cookie is only used by the client it has been issued for by locking it 
+to additional client attributes:
+<ul>
+<li>IP address</li>
+<li>SSL session id</li>
+<li>Browser fingerprint (based on content of the the User-Agent, Accept-Language, 
+and Accept-Encoding HTTP headers as well as the ciphers used fot the 
+SSL session).
+</ul>
+Locking is enfored by allowing the client to change only those attributes 
+at the same time which have been defined by the 
+<a title="CLID_Require" href="#CLID_Require">CLID_Require</a> directive. If all the specified 
+attributes change, the client is verified by redirecting it to 
+<a title="CLID_Check" href="#CLID_Check">pre-defined</a> URL checking validating 
+if the browser does still known the ETag for this URL.
+  </p>
+
+  <p>
+mod_clientid is an open source software licensed under the 
+<a href="LICENSE.txt">GNU Lesser General Public License</a>.
+Downloads are handled by 
+<a href="http://sourceforge.net/projects/mod-csrf/">SourceForge.net</a>.
+  </p>
+
+
+
+
+<h2>Module Directives</h2>
+<p>
+<ul>
+<a name="CLID_Cookie"></a>
+<li><code>CLID_Cookie &lt;secret&gt; &lt;cookie name&gt; &lt;check path&gt;</code><br/>
+Enables the module by defining a secret for data encryption, a name 
+for to cookie used to store the client attributes as well as its 
+secret, and an URL path which is used to verify the client 
+accepts cookies.
+</li>
+<a name="CLID_Check"></a>
+<li><code>CLID_Check &lt;path&gt;</code><br/>
+Defines the path of the URL where the ETag is set/verified.
+</li>
+<a name="CLID_Require"></a>
+<li><code>CLID_Require &lt;attribute&gt;</code><br/>
+Specifies the client attributes which must not change at the very same 
+time/request. Client sessions whose attributes change within the same 
+request are validated using the ETag. Available attributes are 
+'ip', 'ssl', and 'fp'.
+</li>
+<a name="CLID_SemFile"></a>
+<li><code>CLID_SemFile &lt;path&gt;</code><br/>
+File path wihin the server's file system to create the lock file 
+for semaphore/mutex.
+</li>
+</ul>
+</p>
+
+<h2>Module Variables</h2>
+<p>
+<ul>
+<li>
+<code>CLID_RND</code> <br/>
+Contains the session secret.
+</li>
+</ul>
+</p>
+
+<h2>Sample Configuration</h2>
+<p>
+<table border="0" cellspacing="5" cellpadding="10" width="100%">
+<tr><td bgcolor="#E0E0E5">
+<pre>
+# Specifies a secret and the name of the cooke (clid).
+# The page /cookie.html is shown to clients not accepting cookies.
+CLID_Cookie              123456 clid /cookie.html
+
+# The IP address and SSL session id must not change at once.
+CLID_Require             IP SSL
+
+# The path to the ETag check.
+CLID_Check               /error/check
+
+# Use the secret to encrypt the JSESSIONID cookie.
+SetEnvIfPlus             CLID_RND (.*) SP_COOKIE_KEY=$1
+CookieEncPlus            JSESSIONID
+</pre>
+</td></tr>
+</table>
+</p>
+
+  </td>
+  <td>&nbsp;</td>
+
+</tr>
+</tbody>
+</table>
+<br>
+    <hr>
+<SMALL><SMALL>&copy; 2014, Pascal Buchbinder</SMALL></SMALL>
+  </body>
+</html>

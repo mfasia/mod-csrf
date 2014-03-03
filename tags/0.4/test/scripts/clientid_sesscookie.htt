@@ -1,0 +1,188 @@
+INCLUDE scripts/ports
+
+CLIENT
+
+_REQ server1 SSL:$PORT_BASE4
+__GET /htt/index.html?123 HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Accept-Encoding: gzip
+__Host: server1:$PORT_BASE4
+__Connection: keep-alive
+__Req: 01
+__
+_EXPECT . "307 Temporary Redirect"
+_EXPECT . "Location.*cookie.html"
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
+_WAIT
+_SSL:GET_SESSION SIL
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Accept-Encoding: gzip
+__Host: server1:$PORT_BASE4
+__Connection: keep-alive
+__Req: 02
+__Cookie: clid=$COOKIE
+__
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_MATCH headers "Set-Cookie: clidchk=(.*); Max" COOKIE2
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Accept-Encoding: gzip
+__Host: server1:$PORT_BASE4
+__Connection: keep-alive
+__Req: 03
+__Cookie: clid=$COOKIE; clidchk=$COOKIE2
+__
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_MATCH headers "ETag: (.*)" ETAG
+_EXPECT . "!Set-Cookie"
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Accept-Encoding: gzip
+__Host: server1:$PORT_BASE4
+__Connection: keep-alive
+__Req: 04
+__Cookie: clid=$COOKIE; clidchk=$COOKIE2
+__
+_MATCH headers "Set-Cookie: JSESSIONID=(.*)" COOKIE3
+_EXPECT . "==AS1=="
+_EXPECT . "!123abc"
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Accept-Encoding: gzip
+__Host: server1:$PORT_BASE4
+__Connection: keep-alive
+__Req: 05
+__Cookie: clid=$COOKIE; JSESSIONID=$COOKIE3
+__
+_EXPECT . "==AS1=="
+_EXPECT . "!Set-Cookie"
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Accept-Encoding: gzip, deflate
+__Host: server1:$PORT_BASE4
+__Connection: keep-alive
+__Req: 06
+__Cookie: clid=$COOKIE; JSESSIONID=$COOKIE3
+__
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
+_EXPECT . "==AS1=="
+_WAIT
+_CLOSE
+
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__User-Agent: Mozilla 1.0 Superfox
+__Accept-Encoding: gzip, deflate
+__Host: server1:$PORT_BASE4
+__Connection: keep-alive
+__Req: 07
+__Cookie: clid=$COOKIE; JSESSIONID=$COOKIE3
+__
+_MATCH headers "Set-Cookie: clidchk=(.*); Max" COOKIE2
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_WAIT
+_SSL:GET_SESSION SIL2
+_CLOSE
+
+_SSL:SET_SESSION $SIL2
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__User-Agent: Mozilla 1.0 Superfox
+__Accept-Encoding: gzip, deflate
+__Host: server1:$PORT_BASE4
+__Connection: keep-alive
+__Req: 08
+__Cookie: clid=$COOKIE; JSESSIONID=$COOKIE3; clidchk=$COOKIE2
+__If-NONE-MATCH: $ETAG
+__
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_EXPECT . "ETag: $ETAG"
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL2
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__User-Agent: Mozilla 1.0 Superfox
+__Accept-Encoding: gzip, deflate
+__Host: server1:$PORT_BASE4
+__Connection: keep-alive
+__Req: 09
+__Cookie: clid=$COOKIE; JSESSIONID=$COOKIE3; clidchk=$COOKIE2
+__
+_EXPECT . "!Set-Cookie"
+_WAIT
+_CLOSE
+
+END
+
+SERVER ${PORT_BASE1}
+
+_RES
+_EXPECT . "GET /htt/index.html\?123"
+_WAIT
+__HTTP/1.1 200 OK
+__Content-Type: text/plain
+__Content-Length: AUTO
+__Set-Cookie: JSESSIONID=123abc
+__
+__==AS1==
+_CLOSE
+
+_RES
+_EXPECT . "Cookie: JSESSIONID=123abc"
+_WAIT
+__HTTP/1.1 200 OK
+__Content-Type: text/plain
+__Content-Length: AUTO
+__
+__==AS1==
+
+_RES
+_EXPECT . "Cookie: JSESSIONID=123abc"
+_WAIT
+__HTTP/1.1 200 OK
+__Content-Type: text/plain
+__Content-Length: AUTO
+__
+__==AS1==
+
+_RES
+_EXPECT . "GET /htt/index.html\?123"
+_EXPECT . "Cookie: .* JSESSIONID=123abc"
+_WAIT
+__HTTP/1.1 200 OK
+__Content-Type: text/plain
+__Content-Length: AUTO
+__
+__==AS1==
+
+END
+
