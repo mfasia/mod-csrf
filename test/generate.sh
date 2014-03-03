@@ -19,6 +19,7 @@ mkdir -p htdocs/doc
 rm -f htdocs/doc/*
 ln -s `pwd`/../doc/*.html htdocs/doc/
 ln -s `pwd`/../doc/*jpg htdocs/doc/
+ln -s `pwd`/../doc/*png htdocs/doc/
 
 FILES="conf/httpd.conf htdocs/index.html"
 for E in $FILES; do
