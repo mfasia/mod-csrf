@@ -49,7 +49,8 @@ _EXPECT . "307 Temporary Redirect"
 _EXPECT . "!Set-Cookie"
 _EXPECT . "Location.*/index"
 _MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
-_MATCH headers "Etag: (.*)" ETAG
+#_MATCH headers "ETag: \"(.*)\"" ETAG
+_MATCH headers "ETag: (.*)" ETAG
 _WAIT
 _CLOSE
 
@@ -99,7 +100,7 @@ _EXPECT . "307 Temporary Redirect"
 _WAIT
 _CLOSE
 _SLEEP 100
-_EXPECT EXEC "mod_clientid\(020\): Timeout while waiting for Etag check"
+_EXPECT EXEC "mod_clientid\(020\): Timeout while waiting for ETag check"
 _EXEC tail -1 logs/error_log
 _EXPECT EXEC "GET /index3.html HTTP/1.1\" 307 - 242 \"Mozilla 1.0 <CHANGED FP CHANGED>\" ... 1[01] "
 _EXEC tail -1 logs/access_log

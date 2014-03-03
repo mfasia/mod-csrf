@@ -1,3 +1,7 @@
+Version 0.4
+
+ - Adds variable CSRF_REDIRECT.
+
 Version 0.3
 
  - Cleanup includes in order to compile properly using apxs.

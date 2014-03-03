@@ -49,7 +49,8 @@ _EXPECT . "307 Temporary Redirect"
 _EXPECT . "!Set-Cookie"
 _EXPECT . "Location.*/index"
 _MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
-_MATCH headers "Etag: (.*)" ETAG
+#_MATCH headers "ETag: \"(.*)\"" ETAG
+_MATCH headers "ETag: (.*)" ETAG
 _WAIT
 _CLOSE
 
@@ -137,6 +138,8 @@ __Req: 09
 __
 _MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
 _MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+#_EXPECT . "ETag: \"${ETAG}\""
+_EXPECT . "ETag: ${ETAG}"
 _EXPECT . "Location.*/index"
 _WAIT
 _CLOSE
