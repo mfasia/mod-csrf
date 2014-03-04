@@ -27,7 +27,7 @@
 /************************************************************************
  * Version
  ***********************************************************************/
-static const char g_revision[] = "0.2";
+static const char g_revision[] = "0.3";
 
 /************************************************************************
  * Includes
@@ -117,7 +117,7 @@ typedef struct {
   char *fp;
   char *rnd;
   apr_uint32_t id;
-  apr_uint32_t generation;
+  apr_int32_t generation;
 } clid_rec_t;
 
 typedef struct {
@@ -137,6 +137,7 @@ typedef struct {
   const char *keyPath;                   // cookie check path
   unsigned char key[EVP_MAX_KEY_LENGTH]; // secret
   const char *check;                     // etag check path
+  apr_int32_t maxgeneration;             // how often we recheck
 } clid_config_t;
 
 /************************************************************************
@@ -641,11 +642,10 @@ static char *clid_clientfp(request_rec *r, const char *data) {
  * @param r
  * @param rnd Existing random which shall be re-used (optional)
  * @param id Used together with an existing radnom
- * @param generation Used together with an existing radnom
  * @return New client record
  */
 static clid_rec_t *clid_create_rec(request_rec *r, const char *rnd, 
-                                   apr_uint32_t id, apr_uint32_t generation) {
+                                   apr_uint32_t id) {
   clid_rec_t *rec = apr_pcalloc(r->pool, sizeof(clid_rec_t));
   rec->ip = apr_pstrdup(r->pool, SF_CONN_REMOTEIP(r));
   rec->sslsid = clid_getsslsid(r);
@@ -653,7 +653,6 @@ static clid_rec_t *clid_create_rec(request_rec *r, const char *rnd,
   if(rnd) {
     rec->rnd = apr_pstrdup(r->pool, rnd);
     rec->id = id;
-    rec->generation = generation + 1;
   } else {
     clid_user_t *u = clid_get_user_conf(r->server);
     rec->rnd = clid_func_RND(r->pool, CLID_RNDLEN);
@@ -699,7 +698,7 @@ static clid_rec_t *clid_rec_d2i(apr_pool_t *pool, const char *str) {
 }
 
 static char *clid_rec_i2d(apr_pool_t *pool, clid_rec_t *rec) {
-  char *id = apr_psprintf(pool, "%s"CLID_DELIM"%s"CLID_DELIM"%s"CLID_DELIM"%s"CLID_DELIM"%u"CLID_DELIM"%u",
+  char *id = apr_psprintf(pool, "%s"CLID_DELIM"%s"CLID_DELIM"%s"CLID_DELIM"%s"CLID_DELIM"%u"CLID_DELIM"%d",
                           rec->ip,
                           rec->sslsid,
                           rec->fp,
@@ -766,7 +765,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
       int changed = 0;
       action = CLID_ACTION_VERIFIED;
       rec = clid_rec_d2i(r->pool, verified);
-      newrec = clid_create_rec(r, rec->rnd, rec->id, rec->generation);
+      newrec = clid_create_rec(r, rec->rnd, rec->id);
       ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
                     CLID_LOGD_PFX"Found valid cookie [%s], id=%s",
                     verified, clid_unique_id(r));
@@ -807,6 +806,16 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
           ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
                         CLID_LOGD_PFX"Action: check ETag, id=%s",
                         clid_unique_id(r));
+          if(conf->maxgeneration > 0) {
+            if(rec->generation >= conf->maxgeneration) {
+              char *sc = clid_create_cookie(r, conf, newrec);
+              action = CLID_ACTION_RESET;
+              ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
+                            CLID_LOGD_PFX"Max generations - skip check ETag, id=%s",
+                            clid_unique_id(r));
+              apr_table_add(r->err_headers_out, "Set-Cookie", sc);
+            }
+          }
         } else {
           // renew cookie
           char *sc = clid_create_cookie(r, conf, newrec);
@@ -878,7 +887,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
      */
     if(action == CLID_ACTION_NEW) {
       /* new request, create a cookie */
-      clid_rec_t *rec = clid_create_rec(r, NULL, 0, 0);
+      clid_rec_t *rec = clid_create_rec(r, NULL, 0);
       char *sc = clid_create_cookie(r, conf, rec);
       char *redirect_page = apr_pstrcat(r->pool, clid_this_host(r),
                                         conf->keyPath,
@@ -924,9 +933,6 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
         /* first request with a matching cookie:
          * - set tag
          * - redirect to orignal page */
-        ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
-                      CLID_LOGD_PFX"Sets ETag [%s], id=%s", etag,
-                      clid_unique_id(r));
         apr_table_add(r->err_headers_out, "ETag", etagStr);
         apr_table_set(r->headers_out, "Location", redirect_page);
         ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
@@ -960,7 +966,9 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
         if((reqETag != NULL) && 
            strcmp(reqETag, etag) == 0) {
           // ok, redirect to orignal page and set new cookie
-          char *sc = clid_create_cookie(r, conf, newrec);
+          char *sc;
+          newrec->generation = rec->generation + 1; // increment the generation counter
+          sc = clid_create_cookie(r, conf, newrec);
           apr_table_add(r->err_headers_out, "ETag", etagStr);
           apr_table_set(r->headers_out, "Location", redirect_page);
           apr_table_add(r->err_headers_out, "Set-Cookie", sc);
@@ -1163,6 +1171,7 @@ static void *clid_srv_config_create(apr_pool_t *p, server_rec *s) {
   sconf->keyName = NULL;
   sconf->keyPath = NULL;
   sconf->check = apr_pstrdup(p, CLID_CHECK_URL);
+  sconf->maxgeneration = -1;
   return sconf;
 }
 
@@ -1184,6 +1193,11 @@ static void *clid_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
     sconf->keyPath = base->keyPath;
     memcpy(sconf->key, base->key, EVP_MAX_KEY_LENGTH);
   }
+  if(add->maxgeneration >= 0) {
+    sconf->maxgeneration = add->maxgeneration;
+  } else {
+    sconf->maxgeneration = base->maxgeneration;
+  }
   if(strcmp(add->check, CLID_CHECK_URL) != 0) {
     sconf->check = add->check;
   } else {
@@ -1200,6 +1214,16 @@ const char *clid_semfile_cmd(cmd_parms *cmd, void *dcfg, const char *path) {
     return err;
   }
   conf->lockFile = ap_server_root_relative(cmd->pool, path);
+  return NULL;
+}
+
+const char *clid_generation_cmd(cmd_parms *cmd, void *dcfg, const char *num) {
+  clid_config_t *conf = ap_get_module_config(cmd->server->module_config, &clientid_module);
+  conf->maxgeneration = atoi(num);
+  if(conf->maxgeneration <= 0 && num[0] != '0') {
+    return apr_psprintf(cmd->pool, "%s: requires numeric value",
+                        cmd->directive->directive);
+  }
   return NULL;
 }
 
@@ -1257,8 +1281,15 @@ static const command_rec clid_config_cmds[] = {
                   " ETag. Available attributes are 'ip', 'ssl', and 'fp'."),
   AP_INIT_TAKE1("CLID_SemFile", clid_semfile_cmd, NULL,
                 RSRC_CONF,
-                "CLID_SemFile <path>, file path wihin the server's file"
+                "CLID_SemFile <path>, file path within the server's file"
                 " system to create the lock file for semaphore/mutex."),
+  AP_INIT_TAKE1("CLID_MaxCheck", clid_generation_cmd, NULL,
+                RSRC_CONF,
+                "CLID_MaxCheck <number>, defines how many times"
+                " the module performs an ETag check to re-validate"
+                " a session. Cookies are automatically renewed without"
+                " further ETag checks if the counter is reached."
+                " Default is '0' (infinite)."),
   { NULL }
 };
 
