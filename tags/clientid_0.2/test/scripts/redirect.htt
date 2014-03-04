@@ -1,0 +1,121 @@
+
+INCLUDE scripts/ports
+
+CLIENT
+
+_REQ 127.0.0.1 $PORT_BASE
+__GET /htt/index.html HTTP/1.1
+__Host: 127.0.0.1:$PORT_BASE
+__
+_MATCH headers "Location: http://127.0.0.1:${PORT_BASE}(.*)" LOC
+_MATCH headers "Set-Cookie: csrfuid=(.*); Path" COOKIE
+_EXPECT . "Location: .*csrfpId.*"
+_WAIT
+_CLOSE
+
+_REQ 127.0.0.1 $PORT_BASE
+__GET /htt/index.do?id=123 HTTP/1.1
+__Host: 127.0.0.1:$PORT_BASE
+__Cookie: csrfuid=${COOKIE}
+__
+_EXPECT . "403 Forbidden"
+_WAIT
+_CLOSE
+
+_REQ 127.0.0.1 $PORT_BASE
+__GET $LOC HTTP/1.1
+__Host: 127.0.0.1:$PORT_BASE
+__Cookie: csrfuid=${COOKIE}
+__
+_EXPECT . "<title>page</title>"
+_WAIT
+_CLOSE
+
+_REQ 127.0.0.1 $PORT_BASE
+__GET /htt/index.html HTTP/1.1
+__Host: 127.0.0.1:$PORT_BASE
+__
+_EXPECT . "!Location: .*csrfpId.*"
+_WAIT
+_CLOSE
+
+_REQ 127.0.0.1 $PORT_BASE
+__GET /htt/index.html HTTP/1.1
+__Host: 127.0.0.1:$PORT_BASE
+__
+_EXPECT . "!Location: .*csrfpId.*"
+_WAIT
+_CLOSE
+
+END
+
+SERVER $PORT_BASE1
+
+_RES
+_WAIT
+__HTTP/1.1 302 Found
+__Content-Type: text/html
+__Content-Length: AUTO
+__Location: http://127.0.0.1:${PORT_BASE}/htt/index.do?id=123
+__
+__<html>
+__<head>
+__<title>redirect</title>
+__</head>
+__<body>
+__<p><a href="/htt/index.do?id=123">here</a></p>
+__</body>
+__</html>
+_CLOSE
+
+_RES
+_WAIT
+__HTTP/1.1 302 Found
+__Content-Type: text/html
+__Content-Length: AUTO
+__
+__<html>
+__<head>
+__<title>page</title>
+__</head>
+__<body>
+__<p></p>
+__</body>
+__</html>
+_CLOSE
+
+_RES
+_WAIT
+__HTTP/1.1 302 Found
+__Content-Type: text/html
+__Content-Length: AUTO
+__Location: http://127.0.0.2:${PORT_BASE}/htt/index.do?id=123
+__
+__<html>
+__<head>
+__<title>redirect</title>
+__</head>
+__<body>
+__<p><a href="/htt/index.do?id=123">here</a></p>
+__</body>
+__</html>
+_CLOSE
+
+_RES
+_WAIT
+__HTTP/1.1 302 Found
+__Content-Type: text/html
+__Content-Length: AUTO
+__Location: http://127.0.0.1:${PORT_BASE}/htt/index.do
+__
+__<html>
+__<head>
+__<title>redirect</title>
+__</head>
+__<body>
+__<p><a href="/htt/index.do">here</a></p>
+__</body>
+__</html>
+_CLOSE
+
+END
