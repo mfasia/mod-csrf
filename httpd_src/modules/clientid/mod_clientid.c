@@ -27,7 +27,7 @@
 /************************************************************************
  * Version
  ***********************************************************************/
-static const char g_revision[] = "0.1";
+static const char g_revision[] = "0.2";
 
 /************************************************************************
  * Includes
@@ -944,13 +944,14 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
         const char *reqETag = apr_table_get(r->headers_in, "If-None-Match");
         if((reqETag != NULL) && (reqETag[0] == '"')) {
           char *tag = apr_pstrdup(r->pool, &reqETag[1]);
+          char *tagstart = tag;
           while(tag && tag[0]) {
             if(tag[0] == '"') {
               tag[0] = '\0';
             }
             tag++;
           }
-          reqETag = tag;
+          reqETag = tagstart;
         }
         /* followup request
          * - check tag
@@ -972,6 +973,10 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
           return HTTP_TEMPORARY_REDIRECT;
         }
         // failed: show page and clear cookie
+        {
+          char *clearCookie = apr_pstrcat(r->pool, conf->keyName, "=; Max-Age=0", NULL);
+          apr_table_add(r->err_headers_out, "Set-Cookie", clearCookie);
+        }
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       CLID_LOG_PFX(023)"ETag check failed, id=%s",
                       clid_unique_id(r));
