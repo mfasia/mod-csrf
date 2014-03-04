@@ -1,25 +1,7 @@
 INCLUDE scripts/ports
 
 CLIENT
-_EXEC ./ctl.sh restart -D fp 1>/dev/null
-
-#
-# send an old cookie (different key)
-#
-_REQ server1 SSL:$PORT_BASE4
-__GET /index3.html HTTP/1.1
-__User-Agent: Mozilla 1.0
-__Host: server1:$PORT_BASE4
-__Req: 00
-__Cookie: clid=3b352mlmvhwJOc707xutxCiUI8M5cnLV0Q9zE1/gdUG3IGpFHbiU2lXAiN0hW7GblJ6Z4Ihz30RUCm5cCdzSUocNS3uNrLdj9gVIokjOrOaE77I7W2IGbjelOmxOfLv3gsHWFns07xyiOIAepamNYLnhmtcD4aTDG1j2P3X/k4M=
-__
-_EXPECT . "Set-Cookie"
-_EXPECT . "!start page 3"
-_EXPECT . "307 Temporary"
-_WAIT
-_CLOSE
-
-# now start the "real" fp test...
+_EXEC ./ctl.sh restart -D fp -D mxc3 1>/dev/null
 
 #
 # create new session
@@ -85,30 +67,16 @@ _EXPECT . "200 OK"
 _WAIT
 _CLOSE
 
-#
-# new ssl session (no impact)
-#
-_REQ server1 SSL:$PORT_BASE4
-__GET $LOCATION HTTP/1.1
-__Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0
-__Cookie: clid=$COOKIE
-__Req: 05
-__
-_EXPECT . "start page 3"
-_EXPECT . "200 OK"
-_EXPECT . "!Set-Cookie"
-_SSL:GET_SESSION SIL2
-_WAIT
-
+_SET counter=1
+_LOOP 3
 #
 # fingerprint changes => recheck
 #
 _SSL:SET_SESSION $SIL2
 _REQ server1 SSL:$PORT_BASE4
-__GET $LOCATION HTTP/1.1
+__GET /index3.html HTTP/1.1
 __Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 NEW
+__User-Agent: Mozilla 1.0 $counter
 __Cookie: clid=$COOKIE
 __Req: 05
 __
@@ -121,50 +89,11 @@ _EXPECT . "Set-Cookie: clidchk"
 _WAIT
 _CLOSE
 
-# don't send etag
 _SSL:SET_SESSION $SIL2
 _REQ server1 SSL:$PORT_BASE4
 __GET $LOCATION HTTP/1.1
 __Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 NEW
-__Cookie: clid=$COOKIE; clidchk=$COOKIE2
-__Req: 06
-__
-_EXPECT . "Set-Cookie: clid=; Max-Age=0";
-_EXPECT . "Your session has been invalidated due to an unexpected behavior of your browser."
-_WAIT
-_CLOSE
-
-# session still locked
-_DATE:GET_TIME START1
-_SSL:SET_SESSION $SIL2
-_REQ server1 SSL:$PORT_BASE4
-__GET /index3.html HTTP/1.1
-__Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 NEW
-__Cookie: clid=$COOKIE; clidchk=$COOKIE2
-__Req: 07
-__
-_MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
-_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
-_EXPECT . "!200 OK"
-_WAIT
-_CLOSE
-_DATE:GET_TIME END1
-
-_OP $END1 SUB $START1 DELTA1
-_IF "$DELTA1" GT "12000"
-_EXIT FAILED
-_END IF
-_IF "$DELTA1" LT "8000"
-_EXIT FAILED
-_END IF
-
-_SSL:SET_SESSION $SIL2
-_REQ server1 SSL:$PORT_BASE4
-__GET $LOCATION HTTP/1.1
-__Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 NEW
+__User-Agent: Mozilla 1.0 $counter
 __Cookie: clid=$COOKIE; clidchk=$COOKIE2
 __If-None-Match: "${ETAG}"
 __Req: 08
@@ -178,12 +107,31 @@ _SSL:SET_SESSION $SIL2
 _REQ server1 SSL:$PORT_BASE4
 __GET /index3.html HTTP/1.1
 __Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 NEW NEW
+__User-Agent: Mozilla 1.0 $counter
 __Cookie: clid=$COOKIE
 __Req: 09
 __
 _EXPECT . "start page 3"
 _EXPECT . "!Set-Cookie"
+_WAIT
+_CLOSE
+
+_OP $counter ADD 1 counter
+_END LOOP
+
+#
+# fingerprint changes => no re-check, just a new cookie
+#
+_SSL:SET_SESSION $SIL2
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 99
+__Cookie: clid=$COOKIE
+__Req: 05
+__
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
+_EXPECT . "start page 3"
 _WAIT
 _CLOSE
 
