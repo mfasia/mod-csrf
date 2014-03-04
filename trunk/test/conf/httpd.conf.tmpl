@@ -204,7 +204,12 @@ Listen                  127.0.0.1:##PORT_BASE4##
    CSRF_Enable              off
 
    CLID_Cookie              123456 clid /cookie.html
+<IfDefine !fp>
    CLID_Require             SSL Fingerprint
+</IfDefine>
+<IfDefine fp>
+   CLID_Require             Fingerprint
+</IfDefine>
    CLID_Check               /error/check
 
    SetEnvIfPlus             CLID_RND (.*) SP_COOKIE_KEY=$1

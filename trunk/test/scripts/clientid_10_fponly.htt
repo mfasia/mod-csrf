@@ -1,0 +1,171 @@
+INCLUDE scripts/ports
+
+CLIENT
+_EXEC ./ctl.sh restart -D fp 1>/dev/null
+#
+# create new session
+#
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Host: server1:$PORT_BASE4
+__Req: 01
+__
+_EXPECT . "!start page 3"
+_EXPECT . "!200 OK"
+_EXPECT . "307 Temporary Redirect"
+_EXPECT . "Location.*cookie.html"
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
+_WAIT
+_SSL:GET_SESSION SIL
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$COOKIE
+__Req: 02
+__
+_EXPECT . "307 Temporary Redirect"
+_EXPECT . "Set-Cookie"
+_EXPECT . "Location.*/check"
+_MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$COOKIE; clidchk=$COOKIE2
+__Req: 03
+__
+_EXPECT . "307 Temporary Redirect"
+_EXPECT . "!Set-Cookie"
+_EXPECT . "Location.*/index"
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_MATCH headers "ETag: (.*)" ETAG
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$COOKIE; clidchk=$COOKIE2
+__Req: 04
+__
+_EXPECT . "start page 3"
+_EXPECT . "200 OK"
+_WAIT
+_CLOSE
+
+#
+# new ssl session (no impact)
+#
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$COOKIE
+__Req: 05
+__
+_EXPECT . "start page 3"
+_EXPECT . "200 OK"
+_EXPECT . "!Set-Cookie"
+_SSL:GET_SESSION SIL2
+_WAIT
+
+#
+# fingerprint changes => recheck
+#
+_SSL:SET_SESSION $SIL2
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 NEW
+__Cookie: clid=$COOKIE
+__Req: 05
+__
+_MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_EXPECT . "Location: .*/error/check"
+_EXPECT . "!start page 3"
+_EXPECT . "!200 OK"
+_EXPECT . "Set-Cookie: clidchk"
+_WAIT
+_CLOSE
+
+# don't send etag
+_SSL:SET_SESSION $SIL2
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 NEW
+__Cookie: clid=$COOKIE; clidchk=$COOKIE2
+__Req: 06
+__
+_EXPECT . "Set-Cookie: clid=; Max-Age=0";
+_EXPECT . "Your session has been invalidated due to an unexpected behavior of your browser."
+_WAIT
+_CLOSE
+
+# session still locked
+_DATE:GET_TIME START1
+_SSL:SET_SESSION $SIL2
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 NEW
+__Cookie: clid=$COOKIE; clidchk=$COOKIE2
+__Req: 07
+__
+_MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_EXPECT . "!200 OK"
+_WAIT
+_CLOSE
+_DATE:GET_TIME END1
+
+_OP $END1 SUB $START1 DELTA1
+_IF "$DELTA1" GT "12000"
+_EXIT FAILED
+_END IF
+_IF "$DELTA1" LT "8000"
+_EXIT FAILED
+_END IF
+
+_SSL:SET_SESSION $SIL2
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 NEW
+__Cookie: clid=$COOKIE; clidchk=$COOKIE2
+__If-None-Match: "${ETAG}"
+__Req: 08
+__
+_EXPECT . "307 Temp"
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL2
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 NEW
+__Cookie: clid=$COOKIE
+__Req: 09
+__
+_EXPECT . "start page 3"
+_EXPECT . "!Set-Cookie"
+_WAIT
+_CLOSE
+
+END

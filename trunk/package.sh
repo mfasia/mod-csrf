@@ -35,29 +35,6 @@ fi
 set -e
 set -u
 
-rm -rf mod_csrf-${VERSION}*
-mkdir -p mod_csrf-${VERSION}/doc
-mkdir -p mod_csrf-${VERSION}/htdocs
-mkdir -p mod_csrf-${VERSION}/apache2
-
-echo "install documentation"
-cp doc/README.TXT mod_csrf-${VERSION}
-cp doc/LICENSE.txt mod_csrf-${VERSION}/doc
-cp doc/CHANGES.txt mod_csrf-${VERSION}/doc
-sed <doc/index.html >mod_csrf-${VERSION}/doc/index.html \
- -e "s/0\.00/${VERSION}/g"
-cp doc/csrf.jpg mod_csrf-${VERSION}/doc/
-cp test/htdocs/csrf.js mod_csrf-${VERSION}/htdocs/
-
-echo "install source"
-cp httpd_src/modules/csrf/mod_csrf.c mod_csrf-${VERSION}/apache2/
-cp httpd_src/modules/csrf/config.m4 mod_csrf-${VERSION}/apache2/
-cp httpd_src/modules/csrf/Makefile.in mod_csrf-${VERSION}/apache2/
-
-echo "package: mod_csrf-${VERSION}.tar.gz"
-tar cf mod_csrf-${VERSION}.tar --owner root --group bin mod_csrf-${VERSION}
-gzip mod_csrf-${VERSION}.tar
-rm -r mod_csrf-${VERSION}
 
 VERSION=`grep "char g_revision" httpd_src/modules/clientid/mod_clientid.c | awk '{print $6}' | awk -F'"' '{print $2}'`
 echo "build mod_clientid version $VERSION distribution package"
@@ -69,6 +46,7 @@ mkdir -p mod_clientid-${VERSION}/apache2
 echo "install documentation"
 cp doc/LICENSE.txt mod_clientid-${VERSION}/doc/
 cp doc/clientid.html mod_clientid-${VERSION}/doc/index.html
+cp doc/clientid.png mod_clientid-${VERSION}/doc
 
 echo "install source"
 cp httpd_src/modules/clientid/mod_clientid.c mod_clientid-${VERSION}/apache2/
