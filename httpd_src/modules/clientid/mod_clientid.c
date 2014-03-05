@@ -744,7 +744,7 @@ static int clid_redirect2check(request_rec *r, clid_config_t *conf) {
 }
 
 /**
- * Sets/creates a client id
+ * Verifies or creates the client id
  *
  * @param r
  * @param conf
