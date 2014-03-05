@@ -160,6 +160,7 @@ _IF "$DELTA1" LT "8000"
 _EXIT FAILED
 _END IF
 
+# now follow the redirect to the etag check
 _SSL:SET_SESSION $SIL2
 _REQ server1 SSL:$PORT_BASE4
 __GET $LOCATION HTTP/1.1
@@ -174,11 +175,12 @@ _MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
 _WAIT
 _CLOSE
 
+# client is now unlocked, new fp is approved
 _SSL:SET_SESSION $SIL2
 _REQ server1 SSL:$PORT_BASE4
 __GET /index3.html HTTP/1.1
 __Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 NEW NEW
+__User-Agent: Mozilla 1.0 NEW
 __Cookie: clid=$COOKIE
 __Req: 09
 __
