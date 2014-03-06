@@ -138,6 +138,7 @@ typedef struct {
   unsigned char key[EVP_MAX_KEY_LENGTH]; // secret
   const char *check;                     // etag check path
   apr_int32_t maxgeneration;             // how often we recheck
+  apr_table_t *fingerprint;
 } clid_config_t;
 
 typedef struct {
@@ -153,6 +154,11 @@ module AP_MODULE_DECLARE_DATA clientid_module;
 /************************************************************************
  * private
  ***********************************************************************/
+
+/**
+ * Returns the UNIQUE_ID (if mod_uniqueid has been loaded
+ * otherwise an empty string).
+ */
 static const char *clid_unique_id(request_rec *r) {
   const char *id = apr_table_get(r->subprocess_env, "UNIQUE_ID");
   if(id == NULL) {
@@ -228,6 +234,9 @@ static const apr_uint32_t clid_crc32tab[256] = {
   0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d,
 };
 
+/**
+ * Creates a CRC32 representing the provided string
+ */
 static apr_uint32_t clid_crc32(const char *data, const apr_size_t data_len) {
   apr_uint32_t i;
   apr_uint32_t crc;
@@ -263,6 +272,9 @@ static clid_user_t *clid_get_user_conf(server_rec *s) {
   return u;
 }
 
+/**
+ * Set a pending etag check
+ */
 static void clid_table_set(clid_user_t *u, apr_uint32_t id) {
   int i = id / 32;
   int pos = id % 32;
@@ -271,6 +283,9 @@ static void clid_table_set(clid_user_t *u, apr_uint32_t id) {
   u->clientTableIndex[i] |= flag;
 }
 
+/**
+ * Clears a pending etag check
+ */
 static void clid_table_clear(clid_user_t *u, apr_uint32_t id) {
   int i = id / 32;
   int pos = id % 32;
@@ -280,6 +295,9 @@ static void clid_table_clear(clid_user_t *u, apr_uint32_t id) {
   u->clientTableIndex[i] &= flag;
 }
 
+/**
+ * Tests if the session index is locked to perform an etag check
+ */
 static int clid_table_test(clid_user_t *u, apr_uint32_t id) {
   int i = id / 32;
   int pos = id % 32;
@@ -564,7 +582,7 @@ static char *clid_get_remove_cookie(request_rec *r, const char *name) {
  * Returns the SSL session id of the current connection
  *
  * @param r
- * @return ID as a string
+ * @return ID as a string (or a string containing "null" for plain txt conn)
  */
 static char *clid_getsslsid(request_rec *r) {
   char *sslsid = NULL;
@@ -598,45 +616,39 @@ static char *clid_get_etag(apr_pool_t *pool, clid_rec_t *rec) {
  * @return String representing the client fingerprint
  */
 static char *clid_clientfp(request_rec *r, const char *data) {
-  // TODO: allow the user to specify which parameter to use by configuration
-  const char *lang = apr_table_get(r->headers_in, "Accept-Language");
-  const char *enc = apr_table_get(r->headers_in, "Accept-Encoding");
-  const char *agent = apr_table_get(r->headers_in, "User-Agent");
-  const char *cipher = NULL;
+  clid_config_t *conf = ap_get_module_config(r->server->module_config, 
+                                             &clientid_module);
+  apr_table_entry_t *entry = (apr_table_entry_t *)apr_table_elts(conf->fingerprint)->elts;
+  char *fp = "";
+  apr_uint32_t crc;
   char *id;
   int idlen;
-  char *fp;
-  //char *md;
-  apr_uint32_t crc;
-  if(clid_ssl_var) {
-    cipher = apr_pstrcat(r->pool,
-                         clid_ssl_var(r->pool, r->server, r->connection, r,
-                                      "SSL_CIPHER"),
-                         clid_ssl_var(r->pool, r->server, r->connection, r,
-                                      "SSL_PROTOCOL"),
-                         clid_ssl_var(r->pool, r->server, r->connection, r,
-                                      "SSL_CIPHER_USEKEYSIZE"),
-                         clid_ssl_var(r->pool, r->server, r->connection, r,
-                                      "SSL_CIPHER_ALGKEYSIZE"),
-                         NULL);
+  int i;
+  for(i = 0; i < apr_table_elts(conf->fingerprint)->nelts; i++) {
+    const char *v = NULL;
+    if(entry[i].val[0] == 'S') {
+      // prefer mod_ssl variables
+      if(clid_ssl_var) {
+        v = clid_ssl_var(r->pool, r->server, r->connection, r, entry[i].key);
+      }
+    }
+    if(v == NULL) {
+      // "fallback" to request header
+      v = apr_table_get(r->headers_in, entry[i].key);
+    }
+    if(v) {
+      fp = apr_pstrcat(r->pool, fp, v, NULL);
+    }
   }
-  fp = apr_pstrcat(r->pool,
-                   "",
-                   lang ? lang : "",
-                   enc ? enc : "",
-                   agent ? agent : "",
-                   cipher ? cipher : "",
-                   data,
-                   NULL);
   crc = clid_crc32(fp, strlen(fp));
   idlen = apr_base64_encode_len(sizeof(apr_uint32_t));
   id = (char *)apr_pcalloc(r->pool, idlen + 1);
   apr_base64_encode(id, (const char *)&crc, sizeof(apr_uint32_t));
   id[idlen] = '\0';
-  return id;
   //return apr_psprintf(r->pool, "%ud", crc);
+  // TODO fingerprint is nothing secure/unique so a short crc32 might be enough
   //md = ap_md5_binary(r->pool, (unsigned char *)fp, strlen(fp));
-  //return md;
+  return id;
 }
 
 /**
@@ -665,8 +677,8 @@ static clid_rec_t *clid_create_rec(request_rec *r, const char *rnd,
     rec->id = *u->clientTableIndex;
     *u->clientTableIndex = rec->id + 1;
     if(*u->clientTableIndex == CLID_MAXS) {
-      /* reuse existing entries - we may have clients still using them!!!
-         => todo: implement an expiration timeout and track free entries 
+      /* reuse existing entries - we may have clients still using them!
+         => TODO: implement an expiration timeout and track free entries 
          =>       and handle server restarts */
       *u->clientTableIndex = 0;
     }
@@ -702,7 +714,8 @@ static clid_rec_t *clid_rec_d2i(apr_pool_t *pool, const char *str) {
 }
 
 static char *clid_rec_i2d(apr_pool_t *pool, clid_rec_t *rec) {
-  char *id = apr_psprintf(pool, "%s"CLID_DELIM"%s"CLID_DELIM"%s"CLID_DELIM"%s"CLID_DELIM"%u"CLID_DELIM"%d",
+  char *id = apr_psprintf(pool,
+                          "%s"CLID_DELIM"%s"CLID_DELIM"%s"CLID_DELIM"%s"CLID_DELIM"%u"CLID_DELIM"%d",
                           rec->ip,
                           rec->sslsid,
                           rec->fp,
@@ -720,6 +733,10 @@ static char *clid_create_cookie(request_rec *r, clid_config_t *conf,
                          clid_enc64(r, payload, conf->key),
                          "; httpOnly",
                          NULL);
+  /* TODO we don't set the "secure" flag at the moment (sometimes,
+     the cookie may be used non https requests too and there is 
+     still the option of using the Strict-Transport-Security
+     response header) */
   apr_table_set(r->subprocess_env, CLID_REC, payload);
   ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
                     CLID_LOGD_PFX"Create new cookie [%s], id=%s",
@@ -1120,6 +1137,7 @@ static void clid_child_init(apr_pool_t *p, server_rec *bs) {
 
 static int clid_post_config(apr_pool_t *pconf, apr_pool_t *plog, 
                             apr_pool_t *ptemp, server_rec *bs) {
+  server_rec *s = bs;
   clid_config_t *conf = ap_get_module_config(bs->module_config, 
                                              &clientid_module);
   ap_add_version_component(pconf, apr_psprintf(pconf, "mod_clientid/%s", 
@@ -1175,6 +1193,21 @@ static int clid_post_config(apr_pool_t *pconf, apr_pool_t *plog,
       }
     }
   }
+  // define default client attributes to calculate the fingerprint
+  while(s) {
+    conf = ap_get_module_config(s->module_config, &clientid_module);
+    if(conf->fingerprint == NULL) {
+      conf->fingerprint = apr_table_make(pconf, 20);
+      apr_table_add(conf->fingerprint, "Accept-Language", "H");
+      apr_table_add(conf->fingerprint, "Accept-Encoding", "H");
+      apr_table_add(conf->fingerprint, "User-Agent", "H");
+      apr_table_add(conf->fingerprint, "SSL_CIPHER", "S");
+      apr_table_add(conf->fingerprint, "SSL_PROTOCOL", "S");
+      apr_table_add(conf->fingerprint, "SSL_CIPHER_USEKEYSIZE", "S");
+      apr_table_add(conf->fingerprint, "SSL_CIPHER_ALGKEYSIZE", "S");
+    }
+    s = s->next;
+  }
   return DECLINED;
 }
 
@@ -1211,6 +1244,7 @@ static void *clid_srv_config_create(apr_pool_t *p, server_rec *s) {
   sconf->keyPath = NULL;
   sconf->check = apr_pstrdup(p, CLID_CHECK_URL);
   sconf->maxgeneration = -1;
+  sconf->fingerprint = NULL;
   return sconf;
 }
 
@@ -1242,7 +1276,11 @@ static void *clid_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
   } else {
     sconf->check = base->check;
   }
-
+  if(add->fingerprint) {
+    sconf->fingerprint = add->fingerprint;
+  } else {
+    sconf->fingerprint = base->fingerprint;
+  }
   return sconf;
 }
 
@@ -1305,6 +1343,19 @@ const char *clid_require_cmd(cmd_parms *cmd, void *dcfg, const char *attr) {
   return NULL;
 }
 
+const char *clid_fingerprint_cmd(cmd_parms *cmd, void *dcfg, const char *attr) {
+  clid_config_t *conf = ap_get_module_config(cmd->server->module_config, &clientid_module);
+  if(conf->fingerprint == NULL) {
+    conf->fingerprint = apr_table_make(cmd->pool, 20);
+  }
+  if(strncasecmp(attr, "SSL_", 4) == 0) {
+    apr_table_set(conf->fingerprint, attr, "S");
+  } else {
+    apr_table_set(conf->fingerprint, attr, "H");
+  }
+  return NULL;
+}
+
 static const command_rec clid_config_cmds[] = {
   AP_INIT_TAKE3("CLID_Cookie", clid_cookie_attr_cmd, NULL,
                 RSRC_CONF,
@@ -1324,6 +1375,11 @@ static const command_rec clid_config_cmds[] = {
                   " time/request. Client sessions whose attributes change"
                   " within the same request are validated using the"
                   " ETag. Available attributes are 'ip', 'ssl', and 'fp'."),
+  AP_INIT_ITERATE("CLID_Fingerprint", clid_fingerprint_cmd, NULL,
+                  RSRC_CONF,
+                  "CLID_Fingerprint <attribute>, specifies the attributes"
+                  " used to calculate the fingerprint, e.g. Accept-Language,"
+                  " Accept-Encoding, User-Agent, SSL_CIPHER, ..."),
   AP_INIT_TAKE1("CLID_SemFile", clid_semfile_cmd, NULL,
                 RSRC_CONF,
                 "CLID_SemFile <path>, file path within the server's file"

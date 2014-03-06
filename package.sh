@@ -6,6 +6,7 @@ cd `dirname $0`
 TOP=`pwd`
 VERSION=`grep "char g_revision" httpd_src/modules/csrf/mod_csrf.c | awk '{print $6}' | awk -F'"' '{print $2}'`
 echo "build mod_csrf version $VERSION distribution package"
+echo "svn copy -m \"\" svn+ssh://pbuchbinder@svn.code.sf.net/p/mod-csrf/code/trunk svn+ssh://pbuchbinder@svn.code.sf.net/p/mod-csrf/code/tags/${VERSION}"
 
 #TAGV=`echo $VERSION | awk -F'.' '{print "REL_" $1 "_" $2}'`
 #echo "check release tag $TAGV ..."
