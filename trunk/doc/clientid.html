@@ -4,8 +4,7 @@
     <title>mod_clientid</title>
     <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
     <meta name="author" content="Pascal Buchbinder">
-    <meta name="KeyWords" content="Apache Web Server, Open Source Software" />
-    <link rel="shortcut icon" href="favicon.ico" />
+    <meta name="KeyWords" content="Apache Web Server, Open Source Software, cookie, client identifier, fingerprint, ETag, broser cache" />
     <style TYPE="text/css">
     <!--  
       body {
@@ -53,27 +52,27 @@
   <td>&nbsp;</td>
 </tr>
 <tr>
-  <td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+  <td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
   <td>
 
   <p>
 mod_clientid may be used to create a session secret which is stored at 
-the browser within a <i>Cookie</i>. The module tries to ensure that this 
+the browser within a <i>cookie</i>. The module tries to ensure that this 
 cookie is only used by the client it has been issued for by locking it 
-to additional client attributes:
+to additional client attributes such as:
 <ul>
 <li>IP address</li>
 <li>SSL session id</li>
-<li>Browser fingerprint (based on content of the the User-Agent, Accept-Language, 
-and Accept-Encoding HTTP headers as well as the ciphers used fot the 
-SSL session).
+<li>Browser fingerprint (based on content of the HTTP request headers 
+as well as the ciphers used for the SSL session).
 </ul>
 Locking is enfored by allowing the client to change only those attributes 
 at the same time which have been defined by the 
-<a title="CLID_Require" href="#CLID_Require">CLID_Require</a> directive. If all the specified 
-attributes change, the client is verified by redirecting it to 
-<a title="CLID_Check" href="#CLID_Check">pre-defined</a> URL checking validating 
-if the browser does still known the ETag for this URL.
+<a title="CLID_Require" href="#CLID_Require">CLID_Require</a> directive. 
+If all the specified attributes change, the client is verified by 
+redirecting it to a <a title="CLID_Check" href="#CLID_Check">pre-defined</a> 
+URL which checks if the browser does still known the ETag 
+for this URL as it was while creating the session cookie.
   </p>
 
   <p>
@@ -82,8 +81,6 @@ mod_clientid is an open source software licensed under the
 Downloads are handled by 
 <a href="http://sourceforge.net/projects/mod-csrf/">SourceForge.net</a>.
   </p>
-
-
 
 
 <h2>Module Directives</h2>
@@ -103,13 +100,24 @@ time/request. Client sessions whose attributes change within the same
 request are validated using the ETag. Available attributes are 
 'ip', 'ssl', and 'fp'.
 </li>
+<a name="CLID_Fingerprint"></a>
+<li><code>CLID_Fingerprint &lt;attribute&gt;</code><br/>
+Specifies the client attributes used to calculate the fingerprint. <br/>
+Default are the HTTP request headers <i>Accept-Language</i>, 
+<i>Accept-Encoding</i>, and <i>User-Agent</i> as well as the 
+SSL paramters <i>SSL_CIPHER</i>, <i>SSL_PROTOCOL</i>, 
+<i>SSL_CIPHER_USEKEYSIZE</i>, and <i>SSL_CIPHER_ALGKEYSIZE</i>.
+</li>
 <a name="CLID_Check"></a>
 <li><code>CLID_Check &lt;path&gt;</code><br/>
-Defines the path of the URL where the ETag is set/verified.
+Defines the path of the URL where the ETag is set/verified. 
+Default is <i>/res/clchk</i>.
 </li>
 <a name="CLID_MaxCheck"></a>
 <li><code>CLID_MaxCheck &lt;number&gt;</code><br/>
-Defines how many times the module performs an ETag check to re-validate a session. Cookies are automatically renewed without further ETag checks if the counter is reached. Default is '0' (infinite).
+Defines how many times the module performs an ETag check to re-validate 
+a session. Cookies are automatically renewed without further ETag checks 
+if the counter is reached. Default is '0' (infinite).
 </li>
 <a name="CLID_SemFile"></a>
 <li><code>CLID_SemFile &lt;path&gt;</code><br/>
@@ -119,7 +127,8 @@ for semaphore/mutex.
 <a name="CLID_Enable"></a>
 <li><code>CLID_Enable 'on'|'off'</code><br/>
 Enables session enforcement on a per 
-<a href="http://httpd.apache.org/docs/2.2/mod/core.html.en#location" target="_blank">location</a> basis. Default is 'on'.
+<a href="http://httpd.apache.org/docs/2.2/mod/core.html.en#location" target="_blank">location</a> 
+basis. Default is 'on'.
 </li>
 </ul>
 </p>
@@ -127,6 +136,7 @@ Enables session enforcement on a per
 <h2>Module Variables</h2>
 <p>
 <ul>
+<a name="CLID_RND"></a>
 <li>
 <code>CLID_RND</code> <br/>
 Contains the session secret.
@@ -140,14 +150,15 @@ Contains the session secret.
 <tr><td bgcolor="#E0E0E5">
 <pre>
 # Specifies a secret and the name of the cooke (clid).
-# The page /cookie.html is shown to clients not accepting cookies.
-CLID_Cookie              123456 clid /cookie.html
+# The page /res/cookie.html page is shown to clients
+# not accepting cookies.
+CLID_Cookie              123456abc clid /res/cookie.html
 
 # The IP address and SSL session id must not change at once.
 CLID_Require             IP SSL
 
 # The path to the ETag check.
-CLID_Check               /error/check
+CLID_Check               /res/clchk
 
 # Use the secret to encrypt the JSESSIONID cookie.
 SetEnvIfPlus             CLID_RND (.*) SP_COOKIE_KEY=$1
@@ -155,6 +166,23 @@ CookieEncPlus            JSESSIONID
 </pre>
 </td></tr>
 </table>
+</p>
+
+<a name="build"></a>
+<h2>Build</h2>
+<p>You may download the source code of mod_clientid at
+<a href="http://sourceforge.net/projects/mod-csrf/">SourceForge.net</a> 
+and build the shared library using 
+<a target="_blank" href="http://httpd.apache.org/docs/2.2/programs/apxs.html">apxs</a>.
+      <table border="0" cellspacing="5" cellpadding="10" width="100%">
+      <tr><td bgcolor="#EBE5E0">
+Example:<br>
+      <pre>
+cd apache2
+apxs -i -c mod_clientid.c -lcrypto
+      </pre>
+      </td></tr>
+      </table>
 </p>
 
   </td>

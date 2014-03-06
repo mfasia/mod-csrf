@@ -5,7 +5,6 @@
     <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
     <meta name="author" content="Pascal Buchbinder">
     <meta name="KeyWords" content="Apache Web Server, Open Source Software, AdNovum Informatik, Nevis Security Suite, Cross-site request forgery protection, CSRF" />
-    <link rel="shortcut icon" href="favicon.ico" />
     <style TYPE="text/css">
     <!--  
       body {
@@ -159,6 +158,23 @@ the transaction log as well. <br/>
 Example: <br/>&nbsp;&nbsp;<code>LogFormat "%h %l %u %t \"%r\" %&gt;s %b \"%{User-Agent}i\" \"%{Referer}i\" %T <b>id=%{UNIQUE_ID}e</b> %{CSRF_ATTRIBUTE}e #%P"</code>
 </li>
 </ul>
+
+<a name="build"></a>
+<h2>Build</h2>
+<p>You may download the source code of mod_csrf at
+<a href="http://sourceforge.net/projects/mod-csrf/">SourceForge.net</a> 
+and build the shared library using 
+<a target="_blank" href="http://httpd.apache.org/docs/2.2/programs/apxs.html">apxs</a>.
+      <table border="0" cellspacing="5" cellpadding="10" width="100%">
+      <tr><td bgcolor="#EBE5E0">
+Example:<br>
+      <pre>
+cd apache2
+apxs -i -c mod_csrf.c -lcrypto
+      </pre>
+      </td></tr>
+      </table>
+</p>
 
 
   </td>
