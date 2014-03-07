@@ -189,4 +189,31 @@ _EXPECT . "!Set-Cookie"
 _WAIT
 _CLOSE
 
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 Other Client
+__Req: 10
+__
+_EXPECT . "!start page 3"
+_EXPECT . "Set-Cookie"
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE3
+_WAIT
+_SSL:GET_SESSION SIL3
+_CLOSE
+
+_SSL:SET_SESSION $SIL3
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 Other Client
+__Cookie: clid=$COOKIE3
+__Req: 11
+__
+_EXPECT . "!start page 3"
+_EXPECT . "Set-Cookie"
+_EXPECT . "Location.*/check"
+_WAIT
+
 END

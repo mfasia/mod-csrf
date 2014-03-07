@@ -2,158 +2,59 @@ INCLUDE scripts/ports
 
 CLIENT
 
-#
-# create new session
-#
+_EXEC ./ctl.sh stop 1>/dev/null
+_EXEC rm -f ./logs/sem.index
+_EXEC ./ctl.sh start 1>/dev/null
+
+_SET counter=1
+_LOOP 10
+
+# create 10 session
 _REQ server1 SSL:$PORT_BASE4
 __GET /index3.html HTTP/1.1
-__User-Agent: Mozilla 1.0
+__User-Agent: Mozilla 1.0 $counter
 __Host: server1:$PORT_BASE4
-__Req: 01
 __
 _EXPECT . "!start page 3"
 _EXPECT . "!200 OK"
 _EXPECT . "307 Temporary Redirect"
-_EXPECT . "Location.*cookie.html"
-_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
-_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
 _WAIT
-_SSL:GET_SESSION SIL
 _CLOSE
 
-_SSL:SET_SESSION $SIL
+_OP $counter ADD 1 counter
+_END LOOP
+
+# check counter (we issued session 0 to 9)
+_EXEC ./ctl.sh stop 1>/dev/null
+_EXPECT EXEC "GET /index3.html HTTP/1.1.*#9#0 #[0-9]+$"
+_EXEC tail -1 logs/access_log
+_EXPECT EXEC "10"
+_EXEC cat ./logs/sem.index
+
+_EXEC ./ctl.sh start 1>/dev/null
+
+_SET counter=1
+_LOOP 10
+
+# create another 10 session
 _REQ server1 SSL:$PORT_BASE4
-__GET $LOCATION HTTP/1.1
+__GET /index3.html HTTP/1.1
+__User-Agent: Mozilla 1.0 $counter
 __Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0
-__Cookie: clid=$COOKIE
-__Req: 02
 __
+_EXPECT . "!start page 3"
+_EXPECT . "!200 OK"
 _EXPECT . "307 Temporary Redirect"
-_EXPECT . "Set-Cookie"
-_EXPECT . "Location.*/check"
-_MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
-_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
 _WAIT
 _CLOSE
 
-_SSL:SET_SESSION $SIL
-_REQ server1 SSL:$PORT_BASE4
-__GET $LOCATION HTTP/1.1
-__Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0
-__Cookie: clid=$COOKIE; clidchk=$COOKIE2
-__Req: 03
-__
-_EXPECT . "307 Temporary Redirect"
-_EXPECT . "!Set-Cookie"
-_EXPECT . "Location.*/index"
-_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
-#_MATCH headers "ETag: \"(.*)\"" ETAG
-_MATCH headers "ETag: (.*)" ETAG
-_WAIT
-_CLOSE
+_OP $counter ADD 1 counter
+_END LOOP
 
-_SSL:SET_SESSION $SIL
-_REQ server1 SSL:$PORT_BASE4
-__GET $LOCATION HTTP/1.1
-__Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0
-__Cookie: clid=$COOKIE; clidchk=$COOKIE2
-__Req: 04
-__
-_EXPECT . "start page 3"
-_EXPECT . "200 OK"
-_WAIT
-
-#
-# one attribute (FP) changes => expect new cookie
-#
-_SSL:SET_SESSION $SIL
-_REQ server1 SSL:$PORT_BASE4
-__GET $LOCATION HTTP/1.1
-__Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 <CHANGED FP>
-__Cookie: clid=$COOKIE
-__Req: 05
-__
-_EXPECT . "Set-Cookie"
-_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
-_EXPECT . "start page 3"
-_EXPECT . "200 OK"
-_WAIT
-_CLOSE
-
-_SSL:SET_SESSION $SIL
-_REQ server1 SSL:$PORT_BASE4
-__GET $LOCATION HTTP/1.1
-__Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 <CHANGED FP>
-__Cookie: clid=$COOKIE
-__Req: 06
-__
-_EXPECT . "start page 3"
-_EXPECT . "200 OK"
-_WAIT
-_CLOSE
-
-#
-# two attributes change => recheck
-#
-_REQ server1 SSL:$PORT_BASE4
-__GET $LOCATION HTTP/1.1
-__Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 <CHANGED FP CHANED AGAIN>
-__Cookie: clid=$COOKIE
-__Req: 07
-__
-_MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
-_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
-_EXPECT . "Location.*/check"
-_WAIT
-_SSL:GET_SESSION SIL
-_CLOSE
-
-# check without etag:
-_SSL:SET_SESSION $SIL
-_REQ server1 SSL:$PORT_BASE4
-__GET $LOCATION HTTP/1.1
-__Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 <CHANGED FP CHANED AGAIN>
-__Cookie: clid=$COOKIE; clidchk=$COOKIE2
-__Req: 08
-__
-_EXPECT . "Your session has been invalidated due to an unexpected behavior of your browser."
-_WAIT
-_CLOSE
-
-_SSL:SET_SESSION $SIL
-_REQ server1 SSL:$PORT_BASE4
-__GET $LOCATION HTTP/1.1
-__Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 <CHANGED FP CHANED AGAIN>
-__Cookie: clid=$COOKIE; clidchk=$COOKIE2
-__If-None-Match: $ETAG
-__Req: 09
-__
-_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
-_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
-#_EXPECT . "ETag: \"${ETAG}\""
-_EXPECT . "ETag: ${ETAG}"
-_EXPECT . "Location.*/index"
-_WAIT
-_CLOSE
-
-_SSL:SET_SESSION $SIL
-_REQ server1 SSL:$PORT_BASE4
-__GET $LOCATION HTTP/1.1
-__Host: server1:$PORT_BASE4
-__User-Agent: Mozilla 1.0 <CHANGED FP CHANED AGAIN>
-__Cookie: clid=$COOKIE
-__Req: 10
-__
-_EXPECT . "start page 3"
-_WAIT
-_CLOSE
+_EXEC ./ctl.sh restart 1>/dev/null
+_EXPECT EXEC "GET /index3.html HTTP/1.1.*#19#0 #[0-9]+$"
+_EXEC tail -1 logs/access_log
+_EXPECT EXEC "20"
+_EXEC cat ./logs/sem.index
 
 END
