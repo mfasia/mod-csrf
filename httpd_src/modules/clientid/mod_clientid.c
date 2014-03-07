@@ -27,7 +27,7 @@
 /************************************************************************
  * Version
  ***********************************************************************/
-static const char g_revision[] = "0.4";
+static const char g_revision[] = "0.5";
 
 /************************************************************************
  * Includes
@@ -110,7 +110,6 @@ typedef enum  {
   CLID_ACTION_RECHECK
 } clid_acton_e;
 
-
 typedef struct {
   char *ip;
   char *sslsid;
@@ -121,6 +120,7 @@ typedef struct {
 } clid_rec_t;
 
 typedef struct {
+  char *indexFile;
   apr_global_mutex_t *lock;
   apr_uint32_t *clientTable;
   apr_uint32_t *clientTableIndex;
@@ -255,6 +255,8 @@ static apr_uint32_t clid_crc32(const char *data, const apr_size_t data_len) {
  * @return
  */
 static clid_user_t *clid_get_user_conf(server_rec *s) {
+  clid_config_t *conf = ap_get_module_config(s->module_config, 
+                                             &clientid_module);
   void *v;
   clid_user_t *u;
   apr_pool_t *ppool = s->process->pool;
@@ -269,6 +271,7 @@ static clid_user_t *clid_get_user_conf(server_rec *s) {
   u->clientTableIndex = NULL;
   u->m = NULL;
   apr_pool_create(&u->pool, ppool);
+  u->indexFile = apr_psprintf(u->pool, "%s.index", conf->lockFile);
   return u;
 }
 
@@ -280,7 +283,7 @@ static void clid_table_set(clid_user_t *u, apr_uint32_t id) {
   int pos = id % 32;
   unsigned int flag = 1;
   flag = flag << pos;
-  u->clientTableIndex[i] |= flag;
+  u->clientTable[i] |= flag;
 }
 
 /**
@@ -292,7 +295,7 @@ static void clid_table_clear(clid_user_t *u, apr_uint32_t id) {
   unsigned int flag = 1;
   flag = flag << pos;
   flag = ~flag;
-  u->clientTableIndex[i] &= flag;
+  u->clientTable[i] &= flag;
 }
 
 /**
@@ -303,7 +306,7 @@ static int clid_table_test(clid_user_t *u, apr_uint32_t id) {
   int pos = id % 32;
    unsigned int flag = 1;
    flag = flag << pos;
-   if(u->clientTableIndex[i] & flag) {
+   if(u->clientTable[i] & flag) {
      return 1;
    }
    return 0;
@@ -501,7 +504,7 @@ failed:
 }
 
 /**
- * Function: creates radom characters
+ * Creates radom characters
  *
  * @param pool
  * @param len Number of bytes to return
@@ -677,9 +680,8 @@ static clid_rec_t *clid_create_rec(request_rec *r, const char *rnd,
     rec->id = *u->clientTableIndex;
     *u->clientTableIndex = rec->id + 1;
     if(*u->clientTableIndex == CLID_MAXS) {
-      /* reuse existing entries - we may have clients still using them!
-         => TODO: implement an expiration timeout and track free entries 
-         =>       and handle server restarts */
+      /* reuse existing entries
+         -> we might have clients still using them */
       *u->clientTableIndex = 0;
     }
     clid_table_clear(u, rec->id);
@@ -908,7 +910,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
                                                  conf->key),
                                       NULL);
     apr_table_set(r->subprocess_env, CLID_RND, rec->rnd);
-    apr_table_set(r->subprocess_env, CLID_REC, verified);
+    apr_table_set(r->subprocess_env, CLID_REC, clid_rec_i2d(r->pool, rec));
     apr_table_set(r->headers_out, "Location", redirect_page);
     apr_table_add(r->err_headers_out, "Set-Cookie", sc);
     ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
@@ -1126,6 +1128,33 @@ static void clid_config_test(apr_pool_t *pconf, server_rec *bs) {
   clid_verify_config(pconf, bs);
 }
 
+static apr_status_t clid_cleanup_index(void *p) {
+  clid_user_t *u = p;
+  if(u->m) {
+    // write current index to file (for the next server start)
+    apr_file_t *f = NULL;
+    apr_pool_t *fpool;
+    int rc;
+    apr_pool_create(&fpool, NULL);
+    rc = apr_file_open(&f, u->indexFile, APR_WRITE|APR_TRUNCATE|APR_CREATE, 
+                       APR_OS_DEFAULT, fpool);
+    if(rc == APR_SUCCESS) {
+      char *number = apr_psprintf(fpool, "%u", *u->clientTableIndex);
+      apr_file_puts(number, f);
+    } else {
+      ap_log_error(APLOG_MARK, APLOG_CRIT, 0, NULL, 
+                   CLID_LOG_PFX(006)"Failed to store index to %s. "
+                   "Could not open file.",
+                   u->indexFile);
+    }
+    apr_pool_destroy(fpool);
+  }
+  return APR_SUCCESS;
+}  
+
+/**
+ * init childs / mutexes
+ */
 static void clid_child_init(apr_pool_t *p, server_rec *bs) {
   clid_config_t *conf = ap_get_module_config(bs->module_config, 
                                              &clientid_module);
@@ -1135,6 +1164,12 @@ static void clid_child_init(apr_pool_t *p, server_rec *bs) {
   }
 }
 
+/**
+ * post config:
+ * - check config
+ * - create process pool config
+ * - init defaults
+ */
 static int clid_post_config(apr_pool_t *pconf, apr_pool_t *plog, 
                             apr_pool_t *ptemp, server_rec *bs) {
   server_rec *s = bs;
@@ -1152,10 +1187,14 @@ static int clid_post_config(apr_pool_t *pconf, apr_pool_t *plog,
   if(!clid_verify_config(pconf, bs)) {
     exit(1);
   }
+
   if(conf->lockFile) {
     clid_user_t *u = clid_get_user_conf(bs);
     apr_uint32_t i;
     if(u->lock == NULL) {
+      apr_file_t *f = NULL;
+      apr_pool_t *fpool;
+      apr_pool_t *cpool;
       char *semFile = apr_psprintf(u->pool, "%s.m", conf->lockFile);
       int bits = sizeof(apr_uint32_t) * 8;
       int msize = APR_ALIGN_DEFAULT(sizeof(apr_uint32_t) * CLID_MAXS / bits + sizeof(apr_uint32_t));
@@ -1180,7 +1219,7 @@ static int clid_post_config(apr_pool_t *pconf, apr_pool_t *plog,
         char buf[MAX_STRING_LEN];
         apr_strerror(rv, buf, sizeof(buf));
         ap_log_error(APLOG_MARK, APLOG_EMERG, 0, bs, 
-                     CLID_LOG_PFX(002)"Failed to create shared memory "
+                     CLID_LOG_PFX(004)"Failed to create shared memory "
                      "(%s %d): %s.",
                      conf->lockFile, msize, buf);
         exit(1);
@@ -1191,6 +1230,33 @@ static int clid_post_config(apr_pool_t *pconf, apr_pool_t *plog,
       for(i = 0; i < CLID_MAXS/bits; i++) {
         u->clientTable[i] = 0;
       }
+
+      // read id from file
+      apr_pool_create(&fpool, NULL);
+      rv = apr_file_open(&f, u->indexFile, APR_READ|APR_CREATE, 
+                         APR_OS_DEFAULT, fpool);
+      if(rv == APR_SUCCESS) {
+        int numberlen = 48;
+        char *number = apr_pcalloc(fpool, numberlen);
+        number[0] = '0';
+        number[1] = '\0';
+        apr_file_gets(number, numberlen, f);
+        *u->clientTableIndex = atoi(number);
+        if(*u->clientTableIndex >= CLID_MAXS) {
+          *u->clientTableIndex = 0;
+        }
+        ap_log_error(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, bs,
+                     CLID_LOGD_PFX"Index restored from %s: %u.",
+                     u->indexFile, *u->clientTableIndex);
+      } else {
+        ap_log_error(APLOG_MARK, APLOG_CRIT, 0, bs, 
+                     CLID_LOG_PFX(005)"Failed to read index file %s.",
+                     u->indexFile);
+      }
+      apr_pool_destroy(fpool);
+
+      apr_pool_create(&cpool, u->pool);
+      apr_pool_cleanup_register(cpool, u, clid_cleanup_index, apr_pool_cleanup_null);
     }
   }
   // define default client attributes to calculate the fingerprint
