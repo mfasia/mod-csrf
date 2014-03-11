@@ -1,9 +1,14 @@
 #!/bin/bash
 # -*-mode: ksh; ksh-indent: 2; -*-
 
+APA24=""
+if [ `../httpd/httpd -v | grep -c "Apache/2.4"` -eq 1 ]; then
+  APA24="-D apache24"
+fi
+
 COMMAND=$1
 shift
-ADDARGS=$@
+ADDARGS="$@ $APA24"
 case "$COMMAND" in
   start)
          ulimit -c unlimited

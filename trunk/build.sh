@@ -4,7 +4,7 @@
 # mod_csrf - Cross-site request forgery protection module for
 #            the Apache web server
 #
-# Copyright (C) 2012 Christoph Steigmeier, Pascal Buchbinder
+# Copyright (C) 2012-2014 Christoph Steigmeier, Pascal Buchbinder
 # 
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -25,6 +25,7 @@ cd `dirname $0`
 TOP=`pwd`
 
 APACHE_VER=2.2.22
+#APACHE_VER=2.4.3
 
 echo "build Apache $APACHE_VER"
 if [ ! -d httpd-${APACHE_VER} ]; then
@@ -51,22 +52,35 @@ CFLAGS="-DDEFAULT_SERVER_LIMIT=512 -DDEFAULT_THREAD_LIMIT=256 -g -Wall -DI_INSIS
 export CFLAGS 
 
 cd httpd
-./buildconf
-if [ $? -ne 0 ]; then
-  echo "ERROR"
-  exit 1
+
+if [ `echo $APACHE_VER | awk '{print substr($0, 1, 3)}'` = "2.4" ]; then
+  echo "configure Apache 2.4"
+  ./configure --with-apr=`pwd`/../../apr --with-mpm=worker --enable-modules=all --enable-mods-static=all --with-module=csrf:csrf,clientid:clientid
+  RC=$?
+else
+  echo "configure Apache 2.x"
+  ./buildconf
+  if [ $? -ne 0 ]; then
+    echo "ERROR"
+    exit 1
+  fi
+  ./configure --with-mpm=worker --enable-so --enable-csrf=shared --enable-clientid=shared --enable-proxy=shared --enable-ssl --enable-status=shared --enable-info=shared --enable-static-support --enable-unique-id --enable-unique-id=shared --enable-rewrite=shared --enable-dumpio=shared $ADDMOD
+  RC=$?
 fi
 
-./configure --with-mpm=worker --enable-so --enable-csrf=shared --enable-clientid=shared --enable-proxy=shared --enable-ssl --enable-status=shared --enable-info=shared --enable-static-support --enable-unique-id --enable-unique-id=shared --enable-rewrite=shared --enable-dumpio=shared $ADDMOD
-if [ $? -ne 0 ]; then
+if [ $RC -ne 0 ]; then
   echo "ERROR"
   exit 1
 fi
 
 # patch ...
-sed <build/rules.mk > build/rules.mk.2 \
- -e "s;LINK     = \$(LIBTOOL) --mode=link \$(CC) \$(ALL_CFLAGS)  \$(LT_LDFLAGS);LINK     = \$(LIBTOOL) --mode=link \$(CC) \$(ALL_CFLAGS) -static \$(LT_LDFLAGS);g"
-mv build/rules.mk.2 build/rules.mk
+if [ `echo $APACHE_VER | awk '{print substr($0, 1, 3)}'` = "2.4" ]; then
+  echo "no static link patch for Apache 2.4"
+else
+  sed <build/rules.mk > build/rules.mk.2 \
+   -e "s;LINK     = \$(LIBTOOL) --mode=link \$(CC) \$(ALL_CFLAGS)  \$(LT_LDFLAGS);LINK     = \$(LIBTOOL) --mode=link \$(CC) \$(ALL_CFLAGS) -static \$(LT_LDFLAGS);g"
+  mv build/rules.mk.2 build/rules.mk
+fi
 
 make
 if [ $? -ne 0 ]; then
