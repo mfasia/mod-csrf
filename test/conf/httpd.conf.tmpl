@@ -37,7 +37,9 @@ DocumentRoot            ##ROOT##/htdocs/
 ServerSignature         off
 HostnameLookups         off
 UseCanonicalName        on
+<IfDefine !apache24>
 LockFile                ##ROOT##/logs/accept.lock
+</IfDefine>
 Timeout                 30
 KeepAlive               on
 MaxKeepAliveRequests    100
@@ -58,11 +60,14 @@ ErrorLog                ##ROOT##/logs/error_log
 PidFile                 ##ROOT##/logs/apache.pid
 CoreDumpDirectory       ##ROOT##/logs/
 
+<IfDefine !apache24>
 SSLSessionCache         shm:##ROOT##/logs/ssl_scache(1048576)
 SSLMutex                file:##ROOT##/logs/ssl_mutex
 SSLRandomSeed           startup builtin
+</IfDefine>
 
 TypesConfig             ../test/conf/mime.types
+<IfDefine !apache24>
 LoadModule              status_module ##ROOT##/../httpd/modules/generators/.libs/mod_status.so
 LoadModule              info_module ##ROOT##/../httpd/modules/generators/.libs/mod_info.so
 LoadModule              unique_id_module ##ROOT##/../httpd/modules/metadata/.libs/mod_unique_id.so
@@ -70,10 +75,11 @@ LoadModule              proxy_module ##ROOT##/../httpd/modules/proxy/.libs/mod_p
 LoadModule              proxy_http_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy_http.so
 LoadModule              csrf_module ##ROOT##/../httpd/modules/csrf/.libs/mod_csrf.so
 LoadModule              clientid_module ##ROOT##/../httpd/modules/clientid/.libs/mod_clientid.so
+LoadModule              rewrite_module ##ROOT##/../httpd/modules/mappers/.libs/mod_rewrite.so
 LoadModule              setenvifplus_module ##ROOT##/../test/libexec/mod_setenvifplus.so
 LoadModule              parp_module ##ROOT##/../test/libexec/mod_parp.so
 LoadModule              qos_module ##ROOT##/../test/libexec/mod_qos.so
-LoadModule              rewrite_module ##ROOT##/../httpd/modules/mappers/.libs/mod_rewrite.so
+</IfDefine>
 
 CLID_SemFile logs/sem
 
@@ -113,23 +119,30 @@ Listen                  127.0.0.1:##PORT_BASE##
    #CSRF_Enable off
    RewriteEngine on
    # redirect every 5th request to the login page
+<IfDefine !apache24>
    SetEnvIfPlus Request_Query counter=.*5.*  SESSION_EXPIRATION=yes
+</IfDefine>
    RewriteCond %{ENV:SESSION_EXPIRATION} ^yes
    RewriteRule ^/(.*)$ http://127.0.0.1:##PORT_BASE##/login.html?login [L,R]
    # indicate login page access by setting the "X-LoginPage" header
+<IfDefine !apache24>
    SetEnvIfPlus Request_Query .*login.* LOGINPAGE=yes
    ResponseHeaderPlus set X-LoginPage login env=LOGINPAGE
    ResponseHeaderPlus set Access-Control-Allow-Origin http://127.0.0.1:##PORT_BASE## env=LOGINPAGE
    ResponseHeaderPlus set Access-Control-Expose-Headers X-LoginPage env=LOGINPAGE
+</IfDefine>
 
    # set a user tracking cookie which shall be part of the csrf id
+<IfDefine !apache24>
    QS_SessionKey                        1234567890abcdef
    QS_UserTrackingCookieName            csrfuid
+</IfDefine>
    <Location />
-      SetEnvIfPlus Host (.*):[0-9]+     CSRF_ATTRIBUTE=$1
-      SetEnvIfPlus mod_qos_user_id (.*) CSRF_ATTRIBUTE=${CSRF_ATTRIBUTE}:$1
-
+<IfDefine !apache24>
+      SetEnvIf     Host (.*):[0-9]+     CSRF_ATTRIBUTE=$1
+      SetEnvIf     mod_qos_user_id (.*) CSRF_ATTRIBUTE=${CSRF_ATTRIBUTE}:$1
       ResponseSetEnvIfPlus Location 127.0.0.1 CSRF_REDIRECT
+</IfDefine>
    </Location>
 
 </VirtualHost>
@@ -143,19 +156,24 @@ Listen                  127.0.0.1:##PORT_BASE2##
    ProxyPass              /csrf.js !
    ProxyPass              / http://www.nzz.ch/ retry=0
    ProxyPassReverse       / http://www.nzz.ch/
+<IfDefine !apache24>
    ChangeResponseHeaderPlus Location ^http://www.nzz.ch/(.*) http://127.0.0.1:##PORT_BASE2##/$1
-
+</IfDefine>
    CSRF_Passphrase        HN_gVo6FXFj0
 
    # set a user tracking cookie which shall be part of the csrf id
+<IfDefine !apache24>
    QS_SessionKey                        1234567890abcdef
    QS_UserTrackingCookieName            csrfuid
+</IfDefine>
    <Location />
+<IfDefine !apache24>
       SetEnvIfPlus Host (.*):[0-9]+     CSRF_ATTRIBUTE=$1
       SetEnvIfPlus mod_qos_user_id (.*) CSRF_ATTRIBUTE=${CSRF_ATTRIBUTE}:$1
 
       RequestHeaderRemovePattern Accept-Encoding "(x-gzip|x-compress|x-deflate)[,; ]*"
       RequestHeaderRemovePattern Accept-Encoding "(gzip|compress|deflate)[,; ]*"
+</IfDefine>
    </Location>
 </VirtualHost>
 
@@ -171,22 +189,27 @@ Listen                  127.0.0.1:##PORT_BASE3##
    ProxyPass              /csrf.js !
    ProxyPass              / http://www.20min.ch/ retry=0
    ProxyPassReverse       / http://www.20min.ch/
+<IfDefine !apache24>
    ChangeResponseHeaderPlus Location ^http://www.20min.ch/(.*) http://127.0.0.1:##PORT_BASE3##/$1
-
+</IfDefine>
    CSRF_Passphrase        HN_gVo6FXFj0
 
    SetEnvIf Request_URI   /2010/CSS/.*  CSRF_IGNORE=yes
    SetEnvIf Request_URI   /2010/JS/.*  CSRF_IGNORE=yes
 
    # set a user tracking cookie which shall be part of the csrf id
+<IfDefine !apache24>
    QS_SessionKey                        1234567890abcdef
    QS_UserTrackingCookieName            csrfuid
+</IfDefine>
    <Location />
+<IfDefine !apache24>
       SetEnvIfPlus Host (.*):[0-9]+     CSRF_ATTRIBUTE=$1
       SetEnvIfPlus mod_qos_user_id (.*) CSRF_ATTRIBUTE=${CSRF_ATTRIBUTE}:$1
 
       RequestHeaderRemovePattern Accept-Encoding "(x-gzip|x-compress|x-deflate)[,; ]*"
       RequestHeaderRemovePattern Accept-Encoding "(gzip|compress|deflate)[,; ]*"
+</IfDefine>
    </Location>
 </VirtualHost>
 
@@ -220,8 +243,10 @@ Listen                  127.0.0.1:##PORT_BASE4##
    CLID_MaxCheck            3
 </IfDefine>
 
+<IfDefine !apache24>
    SetEnvIfPlus             CLID_RND (.*) SP_COOKIE_KEY=$1
    CookieEncPlus            JSESSIONID
+</IfDefine>
 
    ProxyRequests            Off
    ProxyPass                /htt http://localhost:##PORT_BASE1##/htt retry=0

@@ -1,10 +1,10 @@
 INCLUDE scripts/ports
 
 CLIENT
-_EXEC ./ctl.sh restart -D fp 1>/dev/null
+_EXEC ./ctl.sh restart -D fp 1>/dev/null 2>/dev/null
 
 #
-# send an old cookie (different key)
+# send an old cookie (different key, maybe an old format)
 #
 _REQ server1 SSL:$PORT_BASE4
 __GET /index3.html HTTP/1.1

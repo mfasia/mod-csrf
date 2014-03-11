@@ -83,6 +83,13 @@ static const char g_revision[] = "0.4";
 // env variable to read id from
 #define CSRF_ATTRIBUTE "CSRF_ATTRIBUTE"
 
+// Apache 2.4 compat (experimental)
+#if (AP_SERVER_MINORVERSION_NUMBER == 4)
+#define CSRF_ISDEBUG(s) APLOG_IS_LEVEL(s, APLOG_DEBUG)
+#else
+#define CSRF_ISDEBUG(s) s->loglevel >= APLOG_DEBUG
+#endif
+
 /************************************************************************
  * structures
  ***********************************************************************/
@@ -520,7 +527,7 @@ failed:
  */
 static char *csrf_idstr(request_rec *r) {
   const char *csrf_att = apr_table_get(r->subprocess_env, CSRF_ATTRIBUTE);
-  if(r->server->loglevel >= APLOG_DEBUG) {
+  if(CSRF_ISDEBUG(r->server)) {
     ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
                   CSRF_LOGD_PFX""CSRF_ATTRIBUTE"=%s, id=%s",
                   csrf_att ? csrf_att : "-",
@@ -818,7 +825,7 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
       ap_remove_output_filter(f);
     } else {
       // start searching head/body to inject our script
-      if(r->server->loglevel >= APLOG_DEBUG) {
+      if(CSRF_ISDEBUG(r->server)) {
         ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
                       CSRF_LOGD_PFX"enable JavaScript injection filter, id=%s",
                       csrf_get_uniqueid(r));

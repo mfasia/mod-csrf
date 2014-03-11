@@ -16,10 +16,10 @@ echo "svn copy -m \"\" svn+ssh://pbuchbinder@svn.code.sf.net/p/mod-csrf/code/tru
 #  echo "FAILED"
 #  exit 1
 #fi
-if [ `grep -c "Version $VERSION" doc/CHANGES.txt` -eq 0 ]; then
-  echo "CHANGES.txt check FAILED"
-  exit 1
-fi
+#if [ `grep -c "Version $VERSION" doc/CHANGES.txt` -eq 0 ]; then
+#  echo "CHANGES.txt check FAILED"
+#  exit 1
+#fi
 grep \\$\\$\\$ ./httpd_src/modules/clientid/*.c
 if [ $? -ne 1 ]; then
   WARNINGS=`expr $WARNINGS + 1`

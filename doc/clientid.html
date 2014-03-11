@@ -56,15 +56,15 @@
   <td>
 
   <p>
-mod_clientid may be used to create a session secret which is stored at 
-the browser within a <i>cookie</i>. The module tries to ensure that this 
+mod_clientid may be used to create a <b>session secret which is stored at 
+the browser within a cookie</b>. The module tries to ensure that this 
 cookie is only used by the client it has been issued for by locking it 
 to additional client attributes such as:
 <ul>
 <li>IP address</li>
 <li>SSL session id</li>
-<li>Browser fingerprint (based on content of the HTTP request headers 
-as well as the ciphers used for the SSL session).
+<li>Browser fingerprint (based HTTP request headers 
+as well as SSL parameters)
 </ul>
 Locking is enfored by allowing the client to change only those attributes 
 at the same time which have been defined by the 
@@ -105,7 +105,8 @@ request are validated using the ETag. Available attributes are
 Specifies the client attributes used to calculate the fingerprint. <br/>
 Default are the HTTP request headers <i>Accept-Language</i>, 
 <i>Accept-Encoding</i>, and <i>User-Agent</i> as well as the 
-SSL paramters <i>SSL_CIPHER</i>, <i>SSL_PROTOCOL</i>, 
+<a href="http://httpd.apache.org/docs/2.2/mod/mod_ssl.html#envvars">SSL</a> 
+paramters <i>SSL_CIPHER</i>, <i>SSL_PROTOCOL</i>, 
 <i>SSL_CIPHER_USEKEYSIZE</i>, and <i>SSL_CIPHER_ALGKEYSIZE</i>.
 </li>
 <a name="CLID_Check"></a>
@@ -122,7 +123,8 @@ if the counter is reached. Default is '0' (infinite).
 <a name="CLID_SemFile"></a>
 <li><code>CLID_SemFile &lt;path&gt;</code><br/>
 File path within the server's file system to create the lock file 
-for semaphore/mutex.
+for semaphore/mutex. <br/>
+This directive is configured globally (outside virtual hosts).
 </li>
 <a name="CLID_Enable"></a>
 <li><code>CLID_Enable 'on'|'off'</code><br/>
@@ -161,8 +163,8 @@ CLID_Require             IP SSL
 CLID_Check               /res/clchk
 
 # Use the secret to encrypt the JSESSIONID cookie.
-SetEnvIfPlus             CLID_RND (.*) SP_COOKIE_KEY=$1
-CookieEncPlus            JSESSIONID
+<a href="http://opensource.adnovum.ch/mod_setenvifplus/index.html#SetEnvIfPlus">SetEnvIfPlus</a>             CLID_RND (.*) SP_COOKIE_KEY=$1
+<a href="http://opensource.adnovum.ch/mod_setenvifplus/index.html#CookieEncPlus">CookieEncPlus</a>            JSESSIONID
 </pre>
 </td></tr>
 </table>
@@ -170,7 +172,8 @@ CookieEncPlus            JSESSIONID
 
 <a name="build"></a>
 <h2>Build</h2>
-<p>You may download the source code of mod_clientid at
+<p>mod_clientid is an Apache module. You may download the 
+source code of mod_clientid at 
 <a href="http://sourceforge.net/projects/mod-csrf/">SourceForge.net</a> 
 and build the shared library using 
 <a target="_blank" href="http://httpd.apache.org/docs/2.2/programs/apxs.html">apxs</a>.
