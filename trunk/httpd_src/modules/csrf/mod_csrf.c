@@ -83,7 +83,7 @@ static const char g_revision[] = "0.4";
 // env variable to read id from
 #define CSRF_ATTRIBUTE "CSRF_ATTRIBUTE"
 
-// Apache 2.4 compat (experimental)
+// Apache 2.4 compat
 #if (AP_SERVER_MINORVERSION_NUMBER == 4)
 #define CSRF_ISDEBUG(s) APLOG_IS_LEVEL(s, APLOG_DEBUG)
 #else
