@@ -213,6 +213,11 @@ Listen                  127.0.0.1:##PORT_BASE3##
    </Location>
 </VirtualHost>
 
+#----------------------------------------------------------------------
+#
+# mod_clientid - Per client session identifier module
+#                for the Apache web server.
+#
 Listen                  127.0.0.1:##PORT_BASE4##
 <VirtualHost 127.0.0.1:##PORT_BASE4##>
    ServerName               server1
@@ -225,6 +230,12 @@ Listen                  127.0.0.1:##PORT_BASE4##
    SSLVerifyDepth           3
 
    CSRF_Enable              off
+
+   # redirect to "real" server ServerName (to ensure the browser
+   # returns the cookie when redirected)
+   RewriteEngine on
+   RewriteCond %{HTTP:Host} !server1
+   RewriteRule ^/(.*)$ https://%{SERVER_NAME}:##PORT_BASE4##/$1 [L,R]
 
    CLID_Cookie              123456 clid /cookie.html
 <IfDefine !fp>
