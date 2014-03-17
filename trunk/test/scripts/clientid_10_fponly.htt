@@ -72,6 +72,36 @@ _MATCH headers "ETag: (.*)" ETAG
 _WAIT
 _CLOSE
 
+# etag without redirect cookie => redirect to cookie error page
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET /error/check HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$COOKIE
+__Req: 03.b
+__
+_EXPECT . "307 Temporary Redirect"
+_EXPECT . "!Set-Cookie"
+_EXPECT . "Location.*/cookie.html"
+_WAIT
+_CLOSE
+
+# etag without any cookie => redirect to cookie error page setting a new cookie
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET /error/check HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Req: 03.c
+__
+_EXPECT . "307 Temporary Redirect"
+_EXPECT . "Set-Cookie"
+_EXPECT . "Location.*/cookie.html"
+_WAIT
+_CLOSE
+
+# continue with the session creation (03.b/c do not matter)
 _SSL:SET_SESSION $SIL
 _REQ server1 SSL:$PORT_BASE4
 __GET $LOCATION HTTP/1.1
