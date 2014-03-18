@@ -78,7 +78,7 @@ __GET /index3.html HTTP/1.1
 __Host: server1:$PORT_BASE4
 __User-Agent: Mozilla 1.0 $counter
 __Cookie: clid=$COOKIE
-__Req: 05
+__Req: 05.${counter}
 __
 _MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
 _MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
@@ -96,7 +96,7 @@ __Host: server1:$PORT_BASE4
 __User-Agent: Mozilla 1.0 $counter
 __Cookie: clid=$COOKIE; clidchk=$COOKIE2
 __If-None-Match: "${ETAG}"
-__Req: 08
+__Req: 08.${counter}
 __
 _EXPECT . "307 Temp"
 _MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
@@ -109,7 +109,7 @@ __GET /index3.html HTTP/1.1
 __Host: server1:$PORT_BASE4
 __User-Agent: Mozilla 1.0 $counter
 __Cookie: clid=$COOKIE
-__Req: 09
+__Req: 09.${counter}
 __
 _EXPECT . "start page 3"
 _EXPECT . "!Set-Cookie"

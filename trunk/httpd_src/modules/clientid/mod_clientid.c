@@ -27,7 +27,7 @@
 /************************************************************************
  * Version
  ***********************************************************************/
-static const char g_revision[] = "0.5";
+static const char g_revision[] = "0.6";
 
 /************************************************************************
  * Includes
@@ -601,12 +601,12 @@ static char *clid_getsslsid(request_rec *r) {
   return sslsid;
 }
 
-static char *clid_get_etag(apr_pool_t *pool, clid_rec_t *rec) {
+static char *clid_create_etag(apr_pool_t *pool, clid_rec_t *rec) {
   char *md = ap_md5_binary(pool, (unsigned char *)rec->rnd, CLID_RNDLEN-4);
-  // TODO: it's obvious, that this etag is not the usual "inode-size-mtime" thing
-  //md[6] = '-';
-  //md[10] = '-';
-  //md[24] = '\0';
+  /* TODO: it's obvious, that this etag is not the usual "inode-size-mtime" thing
+   *       md[6] = '-';
+   *       md[10] = '-';
+   *       md[24] = '\0'; */
   return md;
 }
 
@@ -696,18 +696,33 @@ static clid_rec_t *clid_rec_d2i(apr_pool_t *pool, const char *str) {
   char *gen;
   rec->ip = apr_pstrdup(pool, str);
   rec->sslsid = strchr(rec->ip, CLID_DELIM_C);
+  if(rec->sslsid == NULL) {
+    return NULL;
+  }
   rec->sslsid[0] = '\0';
   rec->sslsid++;
   rec->fp = strchr(rec->sslsid, CLID_DELIM_C);
+  if(rec->fp == NULL) {
+    return NULL;
+  }
   rec->fp[0] = '\0';
   rec->fp++;
   rec->rnd = strchr(rec->fp, CLID_DELIM_C);
+  if(rec->rnd == NULL) {
+    return NULL;
+  }
   rec->rnd[0] = '\0';
   rec->rnd++;
   id = strchr(rec->rnd, CLID_DELIM_C);
+  if(id == NULL) {
+    return NULL;
+  }
   id[0] = '\0';
   id++;
   gen = strchr(id, CLID_DELIM_C);
+  if(gen == NULL) {
+    return NULL;
+  }
   gen[0] = '\0';
   gen++;
   rec->id = atoi(id);
@@ -775,12 +790,13 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
   clid_rec_t *rec = NULL;
   clid_rec_t *newrec = NULL;
   clid_acton_e action = CLID_ACTION_NEW;
-
   if(verified) {
+    rec = clid_rec_d2i(r->pool, verified);
+  }
+  if(rec) {
     int require = 0;
     int changed = 0;
     action = CLID_ACTION_VERIFIED;
-    rec = clid_rec_d2i(r->pool, verified);
     newrec = clid_create_rec(r, rec->rnd, rec->id);
     ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
                   CLID_LOGD_PFX"Found valid cookie [%s], id=%s",
@@ -927,9 +943,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
     char *cookieName = apr_pstrcat(r->pool, conf->keyName, 
                                    CLID_COOKIE_N, NULL); 
     char *redirect_page;
-    char *etag = clid_get_etag(r->pool, rec);
-    //char *etagStr = apr_psprintf(r->pool, "\"%s\"", etag);
-    char *etagStr = etag;
+    char *etagStr = clid_create_etag(r->pool, rec);
     char *redirectCookie = clid_get_remove_cookie(r, cookieName);
     if(redirectCookie) {
       char *verifiedRedirectCookie = clid_dec64(r, redirectCookie, 
@@ -952,7 +966,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
       ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
                     CLID_LOGD_PFX"Set ETag (%s) and redirect "
                     "to original url [%s], id=%s",
-                    etag,
+                    etagStr,
                     origPath,
                     clid_unique_id(r));
       return HTTP_TEMPORARY_REDIRECT;
@@ -963,6 +977,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
     if(action == CLID_ACTION_RECHECK) {
       const char *reqETag = apr_table_get(r->headers_in, "If-None-Match");
       if((reqETag != NULL) && (reqETag[0] == '"')) {
+        // strip leading/tailing double quotes
         char *tag = apr_pstrdup(r->pool, &reqETag[1]);
         char *tagstart = tag;
         while(tag && tag[0]) {
@@ -978,7 +993,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
        * - redirect to orignal page if tag was correct and set new cookie
        */
       if((reqETag != NULL) && 
-         strcmp(reqETag, etag) == 0) {
+         strcmp(reqETag, etagStr) == 0) {
         // ok, redirect to orignal page and set new cookie
         char *sc;
         newrec->generation = rec->generation + 1; // increment the generation counter
@@ -1097,8 +1112,10 @@ static int clid_post_read_request(request_rec *r) {
         const char *verified = clid_dec64(r, cookie, conf->key);
         if(verified) {
           clid_rec_t *rec = clid_rec_d2i(r->pool, verified);
-          apr_table_set(r->subprocess_env, CLID_RND, rec->rnd);
-          apr_table_set(r->subprocess_env, CLID_REC, verified);
+          if(rec) {
+            apr_table_set(r->subprocess_env, CLID_RND, rec->rnd);
+            apr_table_set(r->subprocess_env, CLID_REC, verified);
+          }
         }
       }
     }
