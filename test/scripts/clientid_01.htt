@@ -20,6 +20,9 @@ _MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
 _WAIT
 _SSL:GET_SESSION SIL
 _CLOSE
+_SLEEP 100
+_MATCH EXEC "- - 127.0.0.1#.*#.*#(.*)#[0-9]+#[0-9]+ #[0-9]+" ID
+_EXEC tail -1 logs/access_log
 
 _SSL:SET_SESSION $SIL
 _REQ server1 SSL:$PORT_BASE4
@@ -259,10 +262,12 @@ __GET /error/check HTTP/1.1
 __Host: server1:$PORT_BASE4
 __User-Agent: Mozilla 1.0 <CHANGED FP CHANGED AGAIN> CHANGED
 __Cookie: clid=$COOKIE; clidchk=$COOKIE2
-__If-None-Match: $ETAG
+# works with double quotes as well
+__If-None-Match: "$ETAG"
 __Req: 12
 __
 _EXPECT . "307 Tem"
+_EXPECT . "Location.*index3.html"
 _MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
 _WAIT
 _CLOSE
@@ -280,6 +285,16 @@ _EXPECT . "start page 3"
 _WAIT
 _CLOSE
 
+# and has still the same secret
+_SLEEP 100
+_MATCH EXEC "- - 127.0.0.1#.*#.*#(.*)#[0-9]+#[0-9]+ #[0-9]+" ID2
+_EXEC tail -1 logs/access_log
+_CODER:B64ENC $ID IDE
+_CODER:B64ENC $ID2 ID2E
+_IF "$IDE" NOT MATCH "$ID2E"
+_EXIT FAILED
+_END IF
+
 # second client is still locked
 _SSL:SET_SESSION $SILUSER2
 _REQ server1 SSL:$PORT_BASE4
@@ -295,6 +310,16 @@ _EXPECT . "Location.*/error/check"
 _MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2USER2
 _WAIT
 _CLOSE
+
+# second client has (of course) a different id
+_SLEEP 100
+_MATCH EXEC "- - 127.0.0.1#.*#.*#(.*)#[0-9]+#[0-9]+ #[0-9]+" ID3
+_EXEC tail -1 logs/access_log
+_CODER:B64ENC $ID IDE
+_CODER:B64ENC $ID3 ID3E
+_IF "$IDE" MATCH "$ID3E"
+_EXIT FAILED
+_END IF
 
 # second client is still locked
 _SSL:SET_SESSION $SILUSER2
@@ -324,5 +349,27 @@ __
 _EXPECT . "start page 3"
 _WAIT
 _CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 <CHANGED FP CHANGED AGAIN> CHANGED
+__Cookie: clid=$COOKIE
+__Req: 14
+__
+_EXPECT . "start page 3"
+_WAIT
+_CLOSE
+
+# still the same secret
+_SLEEP 100
+_MATCH EXEC "- - 127.0.0.1#.*#.*#(.*)#[0-9]+#[0-9]+ #[0-9]+" ID4
+_EXEC tail -1 logs/access_log
+_CODER:B64ENC $ID IDE
+_CODER:B64ENC $ID4 ID4E
+_IF "$IDE" NOT MATCH "$ID4E"
+_EXIT FAILED
+_END IF
 
 END
