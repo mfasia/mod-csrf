@@ -1017,6 +1017,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
                                             "=; Max-Age=0; Path=/", NULL); 
         apr_table_add(r->err_headers_out, "Set-Cookie", clearCookie);
         apr_table_add(r->err_headers_out, "Set-Cookie", clearETAGCookie);
+        apr_table_add(r->headers_out, "Cache-Control", "no-cache, no-store");
       }
       ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                     CLID_LOG_PFX(023)"ETag check failed, id=%s",
