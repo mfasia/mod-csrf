@@ -32,7 +32,7 @@ __Req: 02
 __
 _EXPECT . "307 Temporary Redirect"
 _EXPECT . "Set-Cookie"
-_EXPECT . "Location.*/check"
+_EXPECT . "Location.*/check.html"
 _MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
 _MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
 _WAIT
@@ -82,7 +82,7 @@ __Req: 05.${counter}
 __
 _MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
 _MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
-_EXPECT . "Location: .*/error/check"
+_EXPECT . "Location: .*/error/check.html"
 _EXPECT . "!start page 3"
 _EXPECT . "!200 OK"
 _EXPECT . "Set-Cookie: clidchk"

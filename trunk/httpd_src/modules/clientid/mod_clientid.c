@@ -748,7 +748,7 @@ static char *clid_create_cookie(request_rec *r, clid_config_t *conf,
   char *sc = apr_pstrcat(r->pool,
                          conf->keyName, "=",
                          clid_enc64(r, payload, conf->key),
-                         "; httpOnly",
+                         "; httpOnly; Path=/",
                          NULL);
   /* TODO we don't set the "secure" flag at the moment (sometimes,
      the cookie may be used non https requests too and there is 
@@ -765,7 +765,7 @@ static int clid_redirect2check(request_rec *r, clid_config_t *conf) {
   char *cookieName = apr_pstrcat(r->pool, conf->keyName, CLID_COOKIE_N, NULL); 
   char *origCookie = apr_pstrcat(r->pool, cookieName, "=",
                                  clid_enc64(r, r->unparsed_uri, conf->key),
-                                 "; Max-Age=8;", NULL);
+                                 "; Max-Age=8; Path=/", NULL);
   char *redirect_page = apr_psprintf(r->pool, "%s%s",
                                      clid_this_host(r),
                                      conf->check);
@@ -876,7 +876,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
                                          CLID_COOKIE_N, NULL); 
           char *origCookie = apr_pstrcat(r->pool, cookieName, "=",
                                          clid_enc64(r, origUrl, conf->key),
-                                         "; Max-Age=8;", NULL);
+                                         "; Max-Age=8; Path=/", NULL);
           char *redirect_page = apr_psprintf(r->pool, "%s%s",
                                              clid_this_host(r),
                                              conf->check);
@@ -1009,10 +1009,14 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
                       clid_unique_id(r));
         return HTTP_TEMPORARY_REDIRECT;
       }
-      // failed: show page and clear cookie
+      // failed: show page and clear cookies
       {
-        char *clearCookie = apr_pstrcat(r->pool, conf->keyName, "=; Max-Age=0", NULL);
+        char *clearCookie = apr_pstrcat(r->pool, conf->keyName,
+                                        "=; Max-Age=0; Path=/", NULL);
+        char *clearETAGCookie = apr_pstrcat(r->pool, conf->keyName, CLID_COOKIE_N,
+                                            "=; Max-Age=0; Path=/", NULL); 
         apr_table_add(r->err_headers_out, "Set-Cookie", clearCookie);
+        apr_table_add(r->err_headers_out, "Set-Cookie", clearETAGCookie);
       }
       ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                     CLID_LOG_PFX(023)"ETag check failed, id=%s",

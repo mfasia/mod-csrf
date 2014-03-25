@@ -12,6 +12,7 @@ function autoStart() {
 }
 
 function autoUpdate() {
+  counter1++;
   var update = document.getElementById("autoupdate");
   var link = "/update.txt" + "?" + "id=" + counter1;
   if(window.XMLHttpRequest) { // non-IE browsers

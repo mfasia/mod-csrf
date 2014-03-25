@@ -45,7 +45,7 @@ __
 _EXPECT . "!start page 3"
 _EXPECT . "!200 OK"
 _EXPECT . "307 Temporary Redirect"
-_EXPECT . "Location.*error/check"
+_EXPECT . "Location.*error/check.html"
 _WAIT
 _CLOSE
 
@@ -106,7 +106,7 @@ __
 _EXPECT . "!start page 3"
 _EXPECT . "!200 OK"
 _EXPECT . "307 Temporary Redirect"
-_EXPECT . "Location.*error/check"
+_EXPECT . "Location.*error/check.html"
 _WAIT
 
 END
