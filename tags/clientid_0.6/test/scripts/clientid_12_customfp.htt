@@ -1,0 +1,112 @@
+INCLUDE scripts/ports
+
+CLIENT
+_EXEC ./ctl.sh restart -D fp 1>/dev/null
+
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Accept-Language: en-US,en;q=0.5
+__Accept-Encoding: gzip, deflate
+__Host: server1:$PORT_BASE4
+__Req: 1.01
+__
+_EXPECT . "!start page 3"
+_EXPECT . "!200 OK"
+_EXPECT . "307 Temporary Redirect"
+_EXPECT . "Location.*cookie.html"
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
+_WAIT
+_CLOSE
+
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Accept-Language: en-US,en;q=0.5
+__Accept-Encoding: gzip, deflate
+__Host: server1:$PORT_BASE4
+__Req: 1.02
+__Cookie: clid=${COOKIE}
+__
+_EXPECT . "start page 3"
+_EXPECT . "200 OK"
+_WAIT
+
+# std. config locks to Accept-Language, Accept-Encoding, and User-Agent
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__User-Agent: Mozilla 1.0 NEW
+__Accept-Language: en-US,en;q=0.5
+__Accept-Encoding: gzip, deflate
+__Host: server1:$PORT_BASE4
+__Req: 1.03
+__Cookie: clid=${COOKIE}
+__
+_EXPECT . "!start page 3"
+_EXPECT . "!200 OK"
+_EXPECT . "307 Temporary Redirect"
+_EXPECT . "Location.*error/check.html"
+_WAIT
+_CLOSE
+
+_EXEC ./ctl.sh restart -D fp -D customfp 1>/dev/null
+
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Accept-Language: en-US,en;q=0.5
+__Accept-Encoding: gzip, deflate
+__Host: server1:$PORT_BASE4
+__Req: 2.01
+__
+_EXPECT . "!start page 3"
+_EXPECT . "!200 OK"
+_EXPECT . "307 Temporary Redirect"
+_EXPECT . "Location.*cookie.html"
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
+_WAIT
+_CLOSE
+
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Accept-Language: en-US,en;q=0.5
+__Accept-Encoding: gzip, deflate
+__Host: server1:$PORT_BASE4
+__Req: 2.02
+__Cookie: clid=${COOKIE}
+__
+_EXPECT . "start page 3"
+_EXPECT . "200 OK"
+_WAIT
+
+# std. config locks to Accept-Language, Accept-Encoding
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__User-Agent: Mozilla 1.0 NEW
+__Accept-Language: en-US,en;q=0.5
+__Accept-Encoding: gzip, deflate
+__Host: server1:$PORT_BASE4
+__Req: 2.03
+__Cookie: clid=${COOKIE}
+__
+_EXPECT . "start page 3"
+_EXPECT . "200 OK"
+_WAIT
+
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__User-Agent: Mozilla 1.0 NEW
+__Accept-Language: en-US,en;q=0.5
+__Accept-Encoding: gzip, deflate, compress
+__Host: server1:$PORT_BASE4
+__Req: 2.04
+__Cookie: clid=${COOKIE}
+__
+_EXPECT . "!start page 3"
+_EXPECT . "!200 OK"
+_EXPECT . "307 Temporary Redirect"
+_EXPECT . "Location.*error/check.html"
+_WAIT
+
+END

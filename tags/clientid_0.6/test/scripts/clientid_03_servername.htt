@@ -1,0 +1,40 @@
+#
+#   # redirect to "real" server ServerName (to ensure the browser
+#   # returns the cookie when redirected)
+#   RewriteEngine on
+#   RewriteCond %{HTTP:Host} !server1
+#   RewriteRule ^/(.*)$ https://server1:##PORT_BASE4##/$1 [L,R]
+
+INCLUDE scripts/ports
+
+CLIENT
+
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Host: 127.0.0.1
+__Req: 01
+__
+_EXPECT . "!start page 3"
+_EXPECT . "!200 OK"
+_EXPECT . "!Set-Cookie"
+_EXPECT . "302 Found"
+_EXPECT . "Location: https://server1:${PORT_BASE4}/index3.html"
+_WAIT
+_CLOSE
+
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Host: server1
+__Req: 02
+__
+_EXPECT . "!start page 3"
+_EXPECT . "!200 OK"
+_EXPECT . "Set-Cookie"
+_EXPECT . "307 Temp"
+_EXPECT . "Location:.*cookie.html"
+_WAIT
+_CLOSE
+
+END

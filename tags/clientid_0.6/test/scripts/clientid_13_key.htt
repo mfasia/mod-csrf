@@ -1,0 +1,109 @@
+
+INCLUDE scripts/ports
+
+CLIENT
+_EXEC ./generate.sh
+_EXEC ./ctl.sh restart -D fp 1>/dev/null 2>/dev/null
+
+#
+# create new session
+#
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Host: server1:$PORT_BASE4
+__Req: 01
+__
+_EXPECT . "!start page 3"
+_EXPECT . "!200 OK"
+_EXPECT . "307 Temporary Redirect"
+_EXPECT . "Location.*cookie.html"
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
+_WAIT
+_SSL:GET_SESSION SIL
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$COOKIE
+__Req: 02
+__
+_EXPECT . "307 Temporary Redirect"
+_EXPECT . "Set-Cookie"
+_EXPECT . "Location.*/check.html"
+_MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$COOKIE; clidchk=$COOKIE2
+__Req: 03
+__
+_EXPECT . "307 Temporary Redirect"
+_EXPECT . "!Set-Cookie"
+_EXPECT . "Location.*/index"
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_MATCH headers "ETag: (.*)" ETAG
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$COOKIE; clidchk=$COOKIE2
+__Req: 04
+__
+_EXPECT . "start page 3"
+_EXPECT . "200 OK"
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$COOKIE; clidchk=$COOKIE2
+__Req: 04
+__
+_EXPECT . "start page 3"
+_EXPECT . "200 OK"
+_WAIT
+_CLOSE
+
+#
+# restart the server with a new key 
+# ->> old session becomes invalid
+#
+_EXEC sed -e "s:123456 clid:bbbb clid:g" -i conf/httpd.conf
+_EXEC ./ctl.sh restart -D fp 1>/dev/null 2>/dev/null
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$COOKIE; clidchk=$COOKIE2
+__Req: 05
+__
+_EXPECT . "!start page 3"
+_EXPECT . "!200 OK"
+_EXPECT . "307 Temporary Redirect"
+_EXPECT . "Location.*cookie.html"
+_WAIT
+_CLOSE
+
+_EXEC ./generate.sh
+
+END
