@@ -27,7 +27,7 @@
 /************************************************************************
  * Version
  ***********************************************************************/
-static const char g_revision[] = "0.6";
+static const char g_revision[] = "0.7";
 
 /************************************************************************
  * Includes
@@ -78,7 +78,7 @@ static const char g_revision[] = "0.6";
 #define CLID_ETAG_N    "mod_clientid::ETag"
 
 #define CLID_COOKIE_N  "chk"
-#define CLID_CHECK_URL "/res/clchk"
+#define CLID_CHECK_URL "/res/clchk.html"
 #define CLID_MAXS      83886080
 
 #define CLID_RNDLEN    24
