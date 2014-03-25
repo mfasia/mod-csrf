@@ -75,7 +75,7 @@ _CLOSE
 # etag without redirect cookie => redirect to cookie error page
 _SSL:SET_SESSION $SIL
 _REQ server1 SSL:$PORT_BASE4
-__GET /error/check HTTP/1.1
+__GET /error/check.html HTTP/1.1
 __Host: server1:$PORT_BASE4
 __User-Agent: Mozilla 1.0
 __Cookie: clid=$COOKIE
@@ -90,7 +90,7 @@ _CLOSE
 # etag without any cookie => redirect to cookie error page setting a new cookie
 _SSL:SET_SESSION $SIL
 _REQ server1 SSL:$PORT_BASE4
-__GET /error/check HTTP/1.1
+__GET /error/check.html HTTP/1.1
 __Host: server1:$PORT_BASE4
 __User-Agent: Mozilla 1.0
 __Req: 03.c
@@ -144,7 +144,7 @@ __Req: 05
 __
 _MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
 _MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
-_EXPECT . "Location: .*/error/check"
+_EXPECT . "Location: .*/error/check.html"
 _EXPECT . "!start page 3"
 _EXPECT . "!200 OK"
 _EXPECT . "Set-Cookie: clidchk"
@@ -283,7 +283,7 @@ __Req: 11
 __
 _EXPECT . "!start page 3"
 _EXPECT . "Set-Cookie"
-_EXPECT . "Location.*/check"
+_EXPECT . "Location.*/check.html"
 _WAIT
 
 END

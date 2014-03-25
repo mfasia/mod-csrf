@@ -105,7 +105,7 @@ _CLOSE
 _SLEEP 100
 _EXPECT EXEC "mod_clientid\(020\): Timeout while waiting for ETag check"
 _EXEC tail -1 logs/error_log
-_EXPECT EXEC "GET /index3.html HTTP/1.1\" 307 - 242 \"Mozilla 1.0 <CHANGED FP CHANGED>\" ... 1[01] "
+_EXPECT EXEC "GET /index3.html HTTP/1.1\" 307 - 2.. \"Mozilla 1.0 <CHANGED FP CHANGED>\" ... 1[01] "
 _EXEC tail -1 logs/access_log
 
 _SSL:SET_SESSION $SIL2
@@ -233,7 +233,7 @@ __Req: 2.05
 __
 _EXPECT . "!start page 3"
 _EXPECT . "307 Tem"
-_EXPECT . "Location.*/error/check"
+_EXPECT . "Location.*/error/check.html"
 _MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2USER2
 _WAIT
 _SSL:GET_SESSION SILUSER2
@@ -248,7 +248,7 @@ __Req: 11
 __
 _EXPECT . "!start page 3"
 _EXPECT . "307 Tem"
-_EXPECT . "Location.*/error/check"
+_EXPECT . "Location.*/error/check.html"
 _MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
 _WAIT
 _SSL:GET_SESSION SIL
@@ -258,7 +258,7 @@ _CLOSE
 
 _SSL:SET_SESSION $SIL
 _REQ server1 SSL:$PORT_BASE4
-__GET /error/check HTTP/1.1
+__GET /error/check.html HTTP/1.1
 __Host: server1:$PORT_BASE4
 __User-Agent: Mozilla 1.0 <CHANGED FP CHANGED AGAIN> CHANGED
 __Cookie: clid=$COOKIE; clidchk=$COOKIE2
@@ -320,7 +320,7 @@ _END IF
 # second client is still locked
 _SSL:SET_SESSION $SILUSER2
 _REQ server1 SSL:$PORT_BASE4
-__GET /error/check HTTP/1.1
+__GET /error/check.html HTTP/1.1
 __Host: server1:$PORT_BASE4
 __User-Agent: Mozilla 1.0 USER2 CHANGED
 __Cookie: clid=$COOKIEUSER2; clidchk=$COOKIE2USER2
