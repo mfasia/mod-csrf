@@ -6,13 +6,26 @@
 <script type="text/javascript">
 
 var counter1 = 0;
-var color = 3;
+var color = 0;
 
 function autoStart() {
   var d = new Date();
   var n = d.getTime();
   counter1 = n % 100000;
   setInterval("autoUpdate()", 200);
+  setInterval("updatePic()", 10000);
+}
+
+function updatePic() {
+  counter1++;
+  var bkimg = "back.jpg";
+  if(color == 1) {
+      color = 0;
+      bkimg = "back3.jpg";
+  } else {
+      color++;
+  }
+  document["pic"].src = "/images/" + bkimg + "?id" + counter1 + "";
 }
 
 function autoUpdate() {
@@ -71,11 +84,14 @@ autoStart();
 <p>
     <a href="/index4.html">index 4</a>
 </p>
-<div id="autoupdate">-</div>
 <p>
-<img src="/images/back.jpg?i=5" width="30" height="30"/>
+<img id="pic" src="/images/back.jpg?i=5" width="30" height="30"/>
 <img src="/images/back3.jpg?i=5" width="30" height="30"/>
-<img src="/images/back3.jpg?i=5" width="30" height="30"/>
+<img id="pic3" src="/images/back3.jpg?i=5" width="30" height="30"/>
+<br>
+<div id="autoupdate">-</div>
+</p>
+<p>
 <img src="/images/back.jpg?i=15" width="30" height="30"/>
 <img src="/images/back3.jpg?i=15" width="30" height="30"/>
 <img src="/images/back3.jpg?i=15" width="30" height="30"/>
