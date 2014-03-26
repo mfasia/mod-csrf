@@ -91,32 +91,38 @@ Downloads are handled by
 <h2>Module Directives</h2>
 <ul>
 <li>
+<a name="CSRF_Enable"></a>
 <code>CSRF_Enable 'on'|'off'</code> <br/>
 Enables or disables the module on a per server or location basis. Default 
 is 'on'.
 </li>
 <li>
+<a name="CSRF_EnableReferer"></a>
 <code>CSRF_EnableReferer 'on'|'off'</code> <br/>
 mod_csrf may deny requests whose HTTP <i>Host</i> and <i>Referer</i> header 
 do not contain the very same hostname. This referer header check is enabled 
 by default.
 </li>
 <li>
+<a name="CSRF_Action"></a>
 <code>CSRF_Action 'deny'|'log'</code> <br/>
 Defines the action to take when a request does violates the configured rules. 
 Default is 'deny'.
 </li>
 <li>
+<a name="CSRF_PassPhrase"></a>
 <code>CSRF_PassPhrase &lt;string&gt;</code> <br/>
 Used to encrypt the mod_csrf request identifier. Default is a 
 non-persistent random passphrase.
 </li>
 <li>
+<a name="CSRF_Timeout"></a>
 <code>CSRF_Timeout &lt;seconds&gt;</code> <br/>
 The validity period of the csrf request identifier injected by the 
 JavaScript. Default is 3600 seconds.
 </li>
 <li>
+<a name="CSRF_ScriptPath"></a>
 <code>CSRF_ScriptPath &lt;path&gt;</code> <br/>
 URL path to the JavaScript to include to each HTML which is then used 
 to inject the mod_csrf request identifier. Default path is /csrf.js.
@@ -126,6 +132,7 @@ to inject the mod_csrf request identifier. Default path is /csrf.js.
 <h2>Module Variables</h2>
 <ul>
 <li>
+<a name="CSRF_IGNORE"></a>
 <code>CSRF_IGNORE</code> <br/>
 The module enforces that every request containing arguments (query string 
 or request body parameter) also contains the request identifier injected 
@@ -137,6 +144,7 @@ setting this environment using mod_setenvif or
 Example: <br/>&nbsp;&nbsp;<code>SetEnviIf Request_URI /startpage.html CSRF_IGNORE=yes</code>
 </li>
 <li>
+<a name="CSRF_ATTRIBUTE"></a>
 <code>CSRF_ATTRIBUTE</code> <br/>
 This environment variable defines the content within the request identifier. 
 It may be set using mod_setenvif or 
@@ -145,6 +153,7 @@ may contain values such as the user name or a session cookie. <br/>
 Example: <br/>&nbsp;&nbsp;<code>SetEnvIfPlus Remote_User (.*) CSRF_ATTRIBUTE=$1</code>
 </li>
 <li>
+<a name="CSRF_REDIRECT"></a>
 <code>CSRF_REDIRECT</code> <br/>
 The modules adds the request identifier to the HTTP <code>Location</code> 
 header if this variable is set. <br/>
