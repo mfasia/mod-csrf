@@ -10,7 +10,7 @@ __Host: server1:$PORT_BASE4
 __Connection: keep-alive
 __Req: 01
 __
-_EXPECT . "307 Temporary Redirect"
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
 _EXPECT . "Location.*cookie.html"
 _MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
 _MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE

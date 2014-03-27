@@ -17,7 +17,7 @@ __Host: server1:$PORT_BASE4
 __
 _EXPECT . "!start page 3"
 _EXPECT . "!200 OK"
-_EXPECT . "307 Temporary Redirect"
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
 _WAIT
 _CLOSE
 
@@ -44,7 +44,7 @@ __Host: server1:$PORT_BASE4
 __
 _EXPECT . "!start page 3"
 _EXPECT . "!200 OK"
-_EXPECT . "307 Temporary Redirect"
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
 _WAIT
 _CLOSE
 

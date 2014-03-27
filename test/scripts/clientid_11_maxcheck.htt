@@ -14,7 +14,7 @@ __Req: 01
 __
 _EXPECT . "!start page 3"
 _EXPECT . "!200 OK"
-_EXPECT . "307 Temporary Redirect"
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
 _EXPECT . "Location.*cookie.html"
 _MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
 _MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
@@ -30,7 +30,7 @@ __User-Agent: Mozilla 1.0
 __Cookie: clid=$COOKIE
 __Req: 02
 __
-_EXPECT . "307 Temporary Redirect"
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
 _EXPECT . "Set-Cookie"
 _EXPECT . "Location.*/check.html"
 _MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
@@ -46,7 +46,7 @@ __User-Agent: Mozilla 1.0
 __Cookie: clid=$COOKIE; clidchk=$COOKIE2
 __Req: 03
 __
-_EXPECT . "307 Temporary Redirect"
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
 _EXPECT . "!Set-Cookie"
 _EXPECT . "Location.*/index"
 _MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
@@ -98,7 +98,7 @@ __Cookie: clid=$COOKIE; clidchk=$COOKIE2
 __If-None-Match: "${ETAG}"
 __Req: 08.${counter}
 __
-_EXPECT . "307 Temp"
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
 _MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
 _WAIT
 _CLOSE

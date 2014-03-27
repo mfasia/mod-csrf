@@ -32,7 +32,7 @@ __
 _EXPECT . "!start page 3"
 _EXPECT . "!200 OK"
 _EXPECT . "Set-Cookie"
-_EXPECT . "307 Temp"
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
 _EXPECT . "Location:.*cookie.html"
 _WAIT
 _CLOSE

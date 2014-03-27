@@ -13,7 +13,7 @@ __Req: 1.01
 __
 _EXPECT . "!start page 3"
 _EXPECT . "!200 OK"
-_EXPECT . "307 Temporary Redirect"
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
 _EXPECT . "Location.*cookie.html"
 _MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
 _WAIT
@@ -44,7 +44,7 @@ __Cookie: clid=${COOKIE}
 __
 _EXPECT . "!start page 3"
 _EXPECT . "!200 OK"
-_EXPECT . "307 Temporary Redirect"
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
 _EXPECT . "Location.*error/check.html"
 _WAIT
 _CLOSE
@@ -61,7 +61,7 @@ __Req: 2.01
 __
 _EXPECT . "!start page 3"
 _EXPECT . "!200 OK"
-_EXPECT . "307 Temporary Redirect"
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
 _EXPECT . "Location.*cookie.html"
 _MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
 _WAIT
@@ -105,7 +105,7 @@ __Cookie: clid=${COOKIE}
 __
 _EXPECT . "!start page 3"
 _EXPECT . "!200 OK"
-_EXPECT . "307 Temporary Redirect"
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
 _EXPECT . "Location.*error/check.html"
 _WAIT
 
