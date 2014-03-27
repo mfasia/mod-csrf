@@ -15,8 +15,8 @@ function autoStart() {
 }
 
 function doPOST() {
-  var url = "update5.txt";
-  var params = "foo=bar";
+  var url = "update.txt";
+  var params = "foo=" + dec64("YmFyCg==") + "&name=alice";
   var update = document.getElementById("autoupdate");
   var http = new XMLHttpRequest();
 
@@ -37,6 +37,17 @@ function doPOST() {
   http.send(params);
 }
 
+function dec64(s) {
+    var e={},i,b=0,c,x,l=0,a,r='',w=String.fromCharCode,L=s.length;
+    var A="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    for(i=0;i<64;i++){e[A.charAt(i)]=i;}
+    for(x=0;x<L;x++){
+        c=e[s.charAt(x)];b=(b<<6)+c;l+=6;
+        while(l>=8){((a=(b>>>(l-=8))&0xff)||(x<(L-2)))&&(r+=w(a));}
+    }
+    return r;
+}
+
 autoStart();
 
 </script>
@@ -44,16 +55,28 @@ autoStart();
 
   <body>
     <h1>page 6</h1>
-
-<div id="autoupdate">-</div>
+<p>ajax POST requests (15 bytes)</p>
+<ul>
+    <li><a href="/index.html">home</a></li>
+    <li><a href="/index3.html">index 3</a></li>
+    <li><a href="/index4.html">index 4</a></li>
+    <li><a href="/index5.html">index 5</a></li>
+</ul>
 
 <p>
-    <a href="/index3.html">index 3</a>
+<div id="autoupdate">-</div>
+</p>
+
+<p>
+<div id="decoded">-</div>
 </p>
 
 
-
     <hr>
-
+<script>
+var decodedNode = document.getElementById("decoded");
+var dec = dec64("MTIzCg==");
+decodedNode.innerHTML = "id=<b>" + dec + "</b>";
+</script>
   </body>
 </html>
