@@ -82,10 +82,18 @@ static const char g_revision[] = "0.7";
 #define CLID_MAXS      83886080
 
 #define CLID_RNDLEN    24
+#define CLID_MAX_POSTDATA     1073741824
 
 #define CLID_FIX_FLAGS_IP     0x01
 #define CLID_FIX_FLAGS_SSLSID 0x02
 #define CLID_FIX_FLAGS_FP     0x04
+
+/* TODO: POST requests are an issue (doesn't matter if we respond
+ *       by 302 or 307) -> browser (FF) never sends the
+ *       If-None-Match header (neither for the POST nor when
+ *       following redrect) */
+#define CLID_REDIRECT_CODE    HTTP_MOVED_TEMPORARILY
+//#define CLID_REDIRECT_CODE    HTTP_TEMPORARY_REDIRECT
 
 // Apache 2.4 compat
 #if (AP_SERVER_MINORVERSION_NUMBER == 4)
@@ -603,7 +611,7 @@ static char *clid_getsslsid(request_rec *r) {
 
 static char *clid_create_etag(apr_pool_t *pool, clid_rec_t *rec) {
   char *md = ap_md5_binary(pool, (unsigned char *)rec->rnd, CLID_RNDLEN-4);
-  /* TODO: it's obvious, that this etag is not the usual "inode-size-mtime" thing
+  /* TODO: it's obvious, that this ETag is not the usual "inode-size-mtime" thing
    *       md[6] = '-';
    *       md[10] = '-';
    *       md[24] = '\0'; */
@@ -774,7 +782,7 @@ static int clid_redirect2check(request_rec *r, clid_config_t *conf) {
                 clid_unique_id(r));
   apr_table_set(r->headers_out, "Location", redirect_page);
   apr_table_add(r->err_headers_out, "Set-Cookie", origCookie);
-  return HTTP_TEMPORARY_REDIRECT;
+  return CLID_REDIRECT_CODE;
 }
 
 /**
@@ -886,7 +894,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
                         origUrl, clid_unique_id(r));
           apr_table_set(r->headers_out, "Location", redirect_page);
           apr_table_add(r->err_headers_out, "Set-Cookie", origCookie);
-          return HTTP_TEMPORARY_REDIRECT;
+          return CLID_REDIRECT_CODE;
         } else {
           // return the cookie check page
           ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
@@ -932,7 +940,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
     ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
                   CLID_LOGD_PFX"Redirect to cookie check page, id=%s",
                   clid_unique_id(r));
-    return HTTP_TEMPORARY_REDIRECT;
+    return CLID_REDIRECT_CODE;
   }
   
   /*
@@ -969,7 +977,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
                     etagStr,
                     origPath,
                     clid_unique_id(r));
-      return HTTP_TEMPORARY_REDIRECT;
+      return CLID_REDIRECT_CODE;
     }
     /*
      * we need to check the etag
@@ -1007,7 +1015,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
         ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
                       CLID_LOGD_PFX"Received valid ETag, id=%s",
                       clid_unique_id(r));
-        return HTTP_TEMPORARY_REDIRECT;
+        return CLID_REDIRECT_CODE;
       }
       // failed: show page and clear cookies
       {
