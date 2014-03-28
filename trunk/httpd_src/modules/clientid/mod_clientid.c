@@ -1038,6 +1038,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
    * lock request or recheck etag
    */
   if(action == CLID_ACTION_RECHECK) {
+    char *redirect_page;
     int loop = 0;
     int checkRunning = 0;
     int startRecheck = 0;
@@ -1061,19 +1062,30 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
       apr_global_mutex_lock(u->lock);          /* @CRT04 */
       checkRunning = clid_table_test(u, rec->id);
       apr_global_mutex_unlock(u->lock);        /* @CRT04 */
-      if(checkRunning && loop > 10) {
+      if(!checkRunning) {
+        /* another request has unlocked the session and received
+           a new client id cookie */
+        break;
+      }
+      if(loop > 10) {
+        /* no other request has unlocked the session yet
+           => start another ETag check (try unlocking the session) */
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       CLID_LOG_PFX(020)"Timeout while "
-                      "waiting for ETag check, id=%s",
+                      "waiting for unlock by ETag check, id=%s",
                       clid_unique_id(r));
-          // start another etag check
         return clid_redirect2check(r, conf);
-        //return HTTP_INTERNAL_SERVER_ERROR;
       }
     }
+    // lets the client re-try with the new cookie he should have received
     ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
-                  CLID_LOGD_PFX"Unlocked, id=%s",
+                  CLID_LOGD_PFX"Unlocked, redirect to inital page, id=%s",
                   clid_unique_id(r));
+    redirect_page = apr_psprintf(r->pool, "%s%s",
+                                 clid_this_host(r),
+                                 r->unparsed_uri);
+    apr_table_set(r->headers_out, "Location", redirect_page);
+    return HTTP_TEMPORARY_REDIRECT; // 307 should always work here
   }
   
   // TODO: we don't remove the etag check cooke (hope it does not "disturb" the app)

@@ -103,7 +103,7 @@ _EXPECT . "(307 Temporary Redirect)|(302 Found)"
 _WAIT
 _CLOSE
 _SLEEP 100
-_EXPECT EXEC "mod_clientid\(020\): Timeout while waiting for ETag check"
+_EXPECT EXEC "mod_clientid\(020\): Timeout while waiting for unlock by ETag check"
 _EXEC tail -1 logs/error_log
 _EXPECT EXEC "GET /index3.html HTTP/1.1\" 30. - 2.. \"Mozilla 1.0 <CHANGED FP CHANGED>\" ... 1[01] "
 _EXEC tail -1 logs/access_log
