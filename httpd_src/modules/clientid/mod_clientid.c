@@ -27,7 +27,7 @@
 /************************************************************************
  * Version
  ***********************************************************************/
-static const char g_revision[] = "0.7";
+static const char g_revision[] = "0.8";
 
 /************************************************************************
  * Includes
@@ -77,6 +77,10 @@ static const char g_revision[] = "0.7";
 #define CLID_USR_SPE   "mod_clientid::user"
 #define CLID_ETAG_N    "mod_clientid::ETag"
 
+// status header (verify|ok) or query
+#define CLID_HDR       "X-ClientId"
+
+#define CLID_HANDLER   "mod_clientid:handler"
 #define CLID_COOKIE_N  "chk"
 #define CLID_CHECK_URL "/res/clchk.html"
 #define CLID_MAXS      83886080
@@ -87,13 +91,6 @@ static const char g_revision[] = "0.7";
 #define CLID_FIX_FLAGS_IP     0x01
 #define CLID_FIX_FLAGS_SSLSID 0x02
 #define CLID_FIX_FLAGS_FP     0x04
-
-/* TODO: POST requests are an issue (doesn't matter if we respond
- *       by 302 or 307) -> browser (FF) never sends the
- *       If-None-Match header (neither for the POST nor when
- *       following redrect) */
-#define CLID_REDIRECT_CODE    HTTP_MOVED_TEMPORARILY
-//#define CLID_REDIRECT_CODE    HTTP_TEMPORARY_REDIRECT
 
 // Apache 2.4 compat
 #if (AP_SERVER_MINORVERSION_NUMBER == 4)
@@ -158,6 +155,10 @@ typedef struct {
  ***********************************************************************/
 module AP_MODULE_DECLARE_DATA clientid_module;
 #define CLID_ICASE_MAGIC  ((void *)(&clientid_module))
+
+/* mod_parp, forward and optional function */
+APR_DECLARE_OPTIONAL_FN(apr_table_t *, parp_hp_table, (request_rec *));
+static APR_OPTIONAL_FN_TYPE(parp_hp_table) *clid_parp_hp_table_fn = NULL;
 
 /************************************************************************
  * private
@@ -769,20 +770,94 @@ static char *clid_create_cookie(request_rec *r, clid_config_t *conf,
   return sc;
 }
 
+/**
+ * Client needs to access the check pae and proves it is the orignal
+ * client by sending the correct ETag
+ */ 
 static int clid_redirect2check(request_rec *r, clid_config_t *conf) {
   char *cookieName = apr_pstrcat(r->pool, conf->keyName, CLID_COOKIE_N, NULL); 
   char *origCookie = apr_pstrcat(r->pool, cookieName, "=",
                                  clid_enc64(r, r->unparsed_uri, conf->key),
-                                 "; Max-Age=8; Path=/", NULL);
+                                 "; Max-Age=8; Path=", conf->check, NULL);
   char *redirect_page = apr_psprintf(r->pool, "%s%s",
                                      clid_this_host(r),
                                      conf->check);
-  ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
-                CLID_LOGD_PFX"Redirect to ETag check page, id=%s",
-                clid_unique_id(r));
-  apr_table_set(r->headers_out, "Location", redirect_page);
-  apr_table_add(r->err_headers_out, "Set-Cookie", origCookie);
-  return CLID_REDIRECT_CODE;
+  // TODO handle any request containing a body
+  if(r->method_number == M_POST) {
+    /* POST requests are an issue: doesn't matter if we respond
+     * by 302 or 307, browser (FF) never sends the
+     * If-None-Match header (neither for the POST itself nor
+     * when following a redrect).
+     * While we could accept this limitation for the initial
+     * id creation, we really need a solution when dealing
+     * with rule violations. */
+    const char *contentType = apr_table_get(r->headers_in, "Content-Type");
+    if(contentType != NULL) {
+      if(strcasestr(contentType, "application/x-www-form-urlencoded")) {
+        apr_table_add(r->notes, "parp", "mod_clientid"); 
+      }
+    }
+//    } else {
+//      contentType = apr_pstrdup(r->pool, "");
+//    }
+//    ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
+//                  CLID_LOGD_PFX"Return verifcation page, id=%s",
+//                  clid_unique_id(r));
+//
+//    // this is not the application's page, don't allow caching:
+//    apr_table_add(r->headers_out, "Cache-Control", "no-cache, no-store");
+//
+//    // allows custom js (ajax call) to detect and handle this response:
+//    apr_table_add(r->headers_out, CLID_HDR, "verify");
+//
+//    ap_set_content_type(r, "text/html");
+//
+//    ap_rprintf(r, "<html><head><title>Session Validation</title>\n");
+//    ap_rprintf(r, "<script type=\"text/javascript\">\n");
+//    ap_rprintf(r, "var link = \"%s\";\n", ap_escape_html(r->pool, conf->check));
+//    ap_rprintf(r, "var req;\n");
+//    ap_rprintf(r, "if(window.XMLHttpRequest) {\n");
+//    ap_rprintf(r, " req = new XMLHttpRequest();\n");
+//    ap_rprintf(r, "} else {\n");
+//    ap_rprintf(r, " req = new ActiveXObject(\"Microsoft.XMLHTTP\");\n");
+//    ap_rprintf(r, "}\n");
+//    ap_rprintf(r, "req.open(\"GET\", link, true);\n");
+//    ap_rprintf(r, "req.setRequestHeader(\""CLID_HDR"\", \"ping\");\n");
+//    ap_rprintf(r, "req.onreadystatechange = function() {\n");
+//    ap_rprintf(r, "  if(req.readyState == 4){\n");
+//    ap_rprintf(r, "    if(req.status == 200) {\n");
+//    ap_rprintf(r, "      document.forms[0].submit();\n");
+//    ap_rprintf(r, "     } else {\n");
+//    ap_rprintf(r, "      window.location = \"%s\";\n",
+//               ap_escape_html(r->pool, r->unparsed_uri));
+//    ap_rprintf(r, "     }\n");
+//    ap_rprintf(r, "  }\n");
+//    ap_rprintf(r, "}\n");
+//    ap_rprintf(r, "req.send();\n");
+//    ap_rprintf(r, "\n");
+//    ap_rprintf(r, "</script>\n");
+//    ap_rprintf(r, "</head><body>Please continue here: \n");
+//    ap_rprintf(r, "<form method=\"POST\" action=\"%s\">\n",
+//               ap_escape_html(r->pool, r->unparsed_uri));
+//    ap_rprintf(r, "<input type=\"submit\" />\n");
+//    ap_rprintf(r, "<input type=\"hidden\" name=\"content-type\" value=\"%s\"/>\n",
+//               ap_escape_html(r->pool, contentType));
+//    TODO add current request parameters
+//    TODO self submitting form works only for application/x-www-form-urlencoded
+//    ap_rprintf(r, "</form>\n");
+//    ap_rprintf(r, "</body></html>\n");
+
+    r->handler = apr_pstrdup(r->pool, CLID_HANDLER);
+    apr_table_set(r->notes, CLID_HANDLER, CLID_HANDLER);
+    return DECLINED;
+  } else {
+    ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
+                  CLID_LOGD_PFX"Redirect to ETag check page, id=%s",
+                  clid_unique_id(r));
+    apr_table_add(r->err_headers_out, "Set-Cookie", origCookie);
+    apr_table_set(r->headers_out, "Location", redirect_page);
+    return HTTP_MOVED_TEMPORARILY;
+  }
 }
 
 /**
@@ -873,6 +948,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
    */
   if(r->parsed_uri.path && 
      (strcmp(conf->keyPath, r->parsed_uri.path) == 0)) {
+    apr_table_add(r->headers_out, "Cache-Control", "no-cache, no-store");
     if(verified) {
       if(r->parsed_uri.query &&  
          (strncmp(r->parsed_uri.query, "r=", 2) == 0)) {
@@ -884,7 +960,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
                                          CLID_COOKIE_N, NULL); 
           char *origCookie = apr_pstrcat(r->pool, cookieName, "=",
                                          clid_enc64(r, origUrl, conf->key),
-                                         "; Max-Age=8; Path=/", NULL);
+                                         "; Max-Age=8; Path=", conf->check, NULL);
           char *redirect_page = apr_psprintf(r->pool, "%s%s",
                                              clid_this_host(r),
                                              conf->check);
@@ -894,7 +970,8 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
                         origUrl, clid_unique_id(r));
           apr_table_set(r->headers_out, "Location", redirect_page);
           apr_table_add(r->err_headers_out, "Set-Cookie", origCookie);
-          return CLID_REDIRECT_CODE;
+          apr_table_add(r->err_headers_out, "Cache-Control", "no-cache, no-store");
+          return HTTP_MOVED_TEMPORARILY;
         } else {
           // return the cookie check page
           ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
@@ -905,10 +982,18 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
         }
       } else {
         // return the cookie check page
-        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
-                      CLID_LOGD_PFX"Cookie check failed "
-                      "(no valid request), id=%s",
-                      clid_unique_id(r));
+        if(r->args && strcmp(r->args, CLID_HDR) == 0) {
+          // ajax unlock call
+          apr_table_add(r->headers_out, CLID_HDR, "ok");
+          ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                        CLID_LOGD_PFX"Ajax call to Cookie check, id=%s",
+                        clid_unique_id(r));
+        } else {
+          ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                        CLID_LOGD_PFX"Cookie check failed "
+                        "(no valid request), id=%s",
+                        clid_unique_id(r));
+        }
         return DECLINED;
       }
     } else {
@@ -940,7 +1025,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
     ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
                   CLID_LOGD_PFX"Redirect to cookie check page, id=%s",
                   clid_unique_id(r));
-    return CLID_REDIRECT_CODE;
+    return HTTP_MOVED_TEMPORARILY;
   }
   
   /*
@@ -977,7 +1062,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
                     etagStr,
                     origPath,
                     clid_unique_id(r));
-      return CLID_REDIRECT_CODE;
+      return HTTP_MOVED_TEMPORARILY;
     }
     /*
      * we need to check the etag
@@ -1004,6 +1089,11 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
          strcmp(reqETag, etagStr) == 0) {
         // ok, redirect to orignal page and set new cookie
         char *sc;
+        if(apr_table_get(r->headers_in, CLID_HDR)) {
+          // ajax unlock call, don't call the application
+          redirect_page = apr_pstrcat(r->pool, clid_this_host(r),
+                                      conf->keyPath, "?"CLID_HDR ,NULL);
+        }
         newrec->generation = rec->generation + 1; // increment the generation counter
         sc = clid_create_cookie(r, conf, newrec);
         apr_table_add(r->err_headers_out, "ETag", etagStr);
@@ -1013,19 +1103,21 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
         clid_table_clear(u, rec->id);
         apr_global_mutex_unlock(u->lock);        /* @CRT03 */
         ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
-                      CLID_LOGD_PFX"Received valid ETag, id=%s",
+                      CLID_LOGD_PFX"Received valid ETag, redirect to '%s', id=%s",
+                      redirect_page,
                       clid_unique_id(r));
-        return CLID_REDIRECT_CODE;
+        return HTTP_MOVED_TEMPORARILY;
       }
       // failed: show page and clear cookies
       {
         char *clearCookie = apr_pstrcat(r->pool, conf->keyName,
                                         "=; Max-Age=0; Path=/", NULL);
         char *clearETAGCookie = apr_pstrcat(r->pool, conf->keyName, CLID_COOKIE_N,
-                                            "=; Max-Age=0; Path=/", NULL); 
+                                            "=; Max-Age=0; Path=", conf->check, NULL); 
         apr_table_add(r->err_headers_out, "Set-Cookie", clearCookie);
         apr_table_add(r->err_headers_out, "Set-Cookie", clearETAGCookie);
-        apr_table_add(r->headers_out, "Cache-Control", "no-cache, no-store");
+        // better: use <meta http-equiv="Pragma" content="no-cache">
+        //apr_table_add(r->headers_out, "Cache-Control", "no-cache, no-store");
       }
       ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                     CLID_LOG_PFX(023)"ETag check failed, id=%s",
@@ -1087,8 +1179,6 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
     apr_table_set(r->headers_out, "Location", redirect_page);
     return HTTP_TEMPORARY_REDIRECT; // 307 should always work here
   }
-  
-  // TODO: we don't remove the etag check cooke (hope it does not "disturb" the app)
   return DECLINED;
 }
 
@@ -1105,6 +1195,105 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
 //  ap_remove_output_filter(f);
 //  return ap_pass_brigade(f->next, bb);
 //}
+
+static int clid_fixup(request_rec *r) {
+  if(ap_is_initial_req(r)) {
+    if(apr_table_get(r->notes, CLID_HANDLER)) {
+      // ensure the mod_clientid handler is used
+      r->handler = apr_pstrdup(r->pool, CLID_HANDLER);
+    }
+  }
+  return DECLINED;
+}
+
+/**
+ * Returns the HTML page containing the JS to re-check POST requests
+ */
+static int clid_handler(request_rec * r) {
+  if(strcmp(r->handler, CLID_HANDLER) == 0) {
+    clid_config_t *conf = ap_get_module_config(r->server->module_config, 
+                                               &clientid_module);
+    apr_table_t *params = NULL;
+    if(clid_parp_hp_table_fn) {
+      params = clid_parp_hp_table_fn(r);
+    }
+    ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
+                  CLID_LOGD_PFX"Return verifcation page, id=%s",
+                  clid_unique_id(r));
+
+    // this is not the application's page, don't allow caching:
+    apr_table_add(r->headers_out, "Cache-Control", "no-cache, no-store");
+
+    // allows custom js (ajax call) to detect and handle this response:
+    apr_table_add(r->headers_out, CLID_HDR, "verify");
+
+    ap_set_content_type(r, "text/html");
+
+    ap_rprintf(r, "<html><head><title>Session Validation</title>\n");
+    ap_rprintf(r, "<script type=\"text/javascript\">\n");
+    ap_rprintf(r, "var link = \"%s\";\n", ap_escape_html(r->pool, conf->check));
+    ap_rprintf(r, "var req;\n");
+    ap_rprintf(r, "if(window.XMLHttpRequest) {\n");
+    ap_rprintf(r, " req = new XMLHttpRequest();\n");
+    ap_rprintf(r, "} else {\n");
+    ap_rprintf(r, " req = new ActiveXObject(\"Microsoft.XMLHTTP\");\n");
+    ap_rprintf(r, "}\n");
+    ap_rprintf(r, "req.open(\"GET\", link, true);\n");
+    ap_rprintf(r, "req.setRequestHeader(\""CLID_HDR"\", \"ping\");\n");
+    ap_rprintf(r, "req.onreadystatechange = function() {\n");
+    ap_rprintf(r, "  if(req.readyState == 4){\n");
+    ap_rprintf(r, "     if(req.status == 200) {\n");
+    /* we could check the response but it does not really matter: if the ETag check
+     * has failed, the next request starts a new session/client id cookie */
+    //ap_rprintf(r, "       var resH = this.getResponseHeader(\"%s\");\n", CLID_HDR);
+    //ap_rprintf(r, "       if(resH != null) {\n");
+    ap_rprintf(r, "         document.forms[0].submit();\n");
+    //ap_rprintf(r, "       } else {\n");
+    //ap_rprintf(r, "         window.location = \"%s\";\n",
+    //           ap_escape_html(r->pool, r->unparsed_uri));
+    //ap_rprintf(r, "       }\n");
+    ap_rprintf(r, "     } else {\n");
+    ap_rprintf(r, "       window.location = \"%s\";\n",
+               ap_escape_html(r->pool, r->unparsed_uri));
+    ap_rprintf(r, "     }\n");
+    ap_rprintf(r, "  }\n");
+    ap_rprintf(r, "}\n");
+    ap_rprintf(r, "req.send();\n");
+    ap_rprintf(r, "\n");
+    ap_rprintf(r, "</script>\n");
+    ap_rprintf(r, "</head><body>Please continue here: \n");
+    ap_rprintf(r, "<form method=\"POST\" action=\"%s\">\n",
+               ap_escape_html(r->pool, r->unparsed_uri));
+    ap_rprintf(r, "<input type=\"submit\" />\n");
+    // TODO form submit works for application/x-www-form-urlencoded POST only!!
+    if(params) {
+      int i;
+      apr_table_entry_t *entry = (apr_table_entry_t *)apr_table_elts(params)->elts;
+      for(i = 0; i < apr_table_elts(params)->nelts; ++i) {
+        const char *key = entry[i].key;
+        const char *val = entry[i].val;
+        if(key) {
+          char *keyu = apr_pstrdup(r->pool, key);
+          char *valu = NULL;
+          ap_unescape_url(keyu);
+          if(val) {
+            valu = apr_pstrdup(r->pool, val);
+            ap_unescape_url(valu);
+          }
+          if(strcasecmp(key, "submit") != 0) {
+            ap_rprintf(r, "<input type=\"hidden\" name=\"%s\" value=\"%s\"/>\n",
+                       ap_escape_html(r->pool, key),
+                       valu ? ap_escape_html(r->pool, valu) : "");
+          }
+        }
+      }
+    }
+    ap_rprintf(r, "</form>\n");
+    ap_rprintf(r, "</body></html>\n");
+    return OK;
+  }
+  return DECLINED;
+}
 
 static int clid_header_parser_request(request_rec *r) {
   if(ap_is_initial_req(r)) {
@@ -1228,6 +1417,14 @@ static int clid_post_config(apr_pool_t *pconf, apr_pool_t *plog,
   clid_config_test(pconf, bs);
   if(!clid_verify_config(pconf, bs)) {
     exit(1);
+  }
+
+  if(ap_find_linked_module("mod_parp.c") == NULL) {
+    ap_log_error(APLOG_MARK, APLOG_WARNING, 0, bs, 
+                 CLID_LOG_PFX(007)"mod_parp not available");
+    clid_parp_hp_table_fn = NULL;
+  } else {
+    clid_parp_hp_table_fn = APR_RETRIEVE_OPTIONAL_FN(parp_hp_table);
   }
 
   if(conf->lockFile) {
@@ -1518,6 +1715,8 @@ static void clid_register_hooks(apr_pool_t * p) {
   ap_hook_post_config(clid_post_config, pre, NULL, APR_HOOK_MIDDLE);
   ap_hook_child_init(clid_child_init, NULL, NULL, APR_HOOK_MIDDLE);
   ap_hook_test_config(clid_config_test, NULL,NULL, APR_HOOK_MIDDLE);
+  ap_hook_fixups(clid_fixup, pre, NULL, APR_HOOK_MIDDLE);
+  ap_hook_handler(clid_handler, NULL, NULL, APR_HOOK_MIDDLE);
 //  ap_register_output_filter( "clid_out_filter", clid_out_filter, NULL, AP_FTYPE_RESOURCE+1);
 //  ap_hook_insert_filter(clid_insert_filter, NULL, NULL, APR_HOOK_MIDDLE);
 }

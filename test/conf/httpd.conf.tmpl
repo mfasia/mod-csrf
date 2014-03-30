@@ -255,6 +255,11 @@ Listen                  127.0.0.1:##PORT_BASE4##
 </IfDefine>
 
 <IfDefine !apache24>
+    SetEnvIfPlus            Request_URI /update.txt NoCache
+    ResponseHeaderPlus      set Cache-Control "no-cache, no-store" env=NoCache
+</IfDefine>
+
+<IfDefine !apache24>
    SetEnvIfPlus             CLID_RND (.*) SP_COOKIE_KEY=$1
    CookieEncPlus            JSESSIONID
 </IfDefine>
