@@ -35,6 +35,7 @@ __
 _EXPECT . "(307 Temporary Redirect)|(302 Found)"
 _EXPECT . "Set-Cookie"
 _EXPECT . "Location.*/check"
+_EXPECT . "Cache-Control: no-cache, no-store"
 _MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
 _MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
 _WAIT

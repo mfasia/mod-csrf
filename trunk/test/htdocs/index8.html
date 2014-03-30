@@ -1,0 +1,50 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+  <head>
+    <title>index 8</title>
+
+<script type="text/javascript">
+
+var link = "index3.html";
+var req;
+var param = "<xml>data</xml>";
+
+if(window.XMLHttpRequest) {
+ req = new XMLHttpRequest();
+} else {
+ req = new ActiveXObject("Microsoft.XMLHTTP");
+}
+
+req.open("POST", link, true);
+
+req.setRequestHeader("Content-type", "text/xml");
+req.setRequestHeader("Content-length", param.length);
+req.setRequestHeader("Connection", "close");
+
+req.onreadystatechange = function() {
+  if(req.readyState == 4){
+    if(req.status == 200) {
+      var res = req.responseText;
+      var d = document;
+      if(d.parentNode) {
+        d = d.parentNode;
+      }
+      var c = d.firstChild;
+      var n = d.createTextNode(res);
+      d.replaceChild(n, c);
+      if(n) alert("ok");
+     } else {
+      window.location = "/index.html";
+     }
+  }
+}
+req.send(param);
+
+</script>
+
+  </head>
+
+  <body>
+    <h1>page 8</h1>
+  </body>
+</html>
