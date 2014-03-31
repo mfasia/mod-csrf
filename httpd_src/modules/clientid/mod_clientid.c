@@ -83,6 +83,7 @@ static const char g_revision[] = "0.8";
 #define CLID_HANDLER   "mod_clientid:handler"
 #define CLID_COOKIE_N  "chk"
 #define CLID_CHECK_URL "/res/clchk.html"
+#define CLID_POST_CHECK_URL "/res/clid_P_clchk"
 #define CLID_MAXS      83886080
 
 #define CLID_RNDLEN    24
@@ -815,6 +816,12 @@ static int clid_redirect2check(request_rec *r, clid_config_t *conf) {
     return HTTP_MOVED_TEMPORARILY;
   }
 #else
+  if(r->method_number == M_POST) {
+    // POST (body data) requies two redirects
+    redirect_page = apr_psprintf(r->pool, "%s%s",
+                                 clid_this_host(r),
+                                 CLID_POST_CHECK_URL);
+  }
   ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
                 CLID_LOGD_PFX"Redirect to ETag check page, id=%s",
                 clid_unique_id(r));
@@ -906,6 +913,20 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
       }
     }
   }
+
+  /*
+   * temp (POST) check page
+   */
+  if(r->parsed_uri.path && 
+     (strcmp(CLID_POST_CHECK_URL, r->parsed_uri.path) == 0)) {
+    char *redirect_page = apr_psprintf(r->pool, "%s%s",
+                                       clid_this_host(r),
+                                       conf->check);
+    apr_table_set(r->headers_out, "Location", redirect_page);
+    apr_table_add(r->err_headers_out, "Cache-Control", "no-cache, no-store");
+    return HTTP_TEMPORARY_REDIRECT;
+  }
+
 
   /* 
    * cookie check page

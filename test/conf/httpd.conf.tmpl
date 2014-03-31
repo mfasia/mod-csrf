@@ -240,8 +240,8 @@ Listen                  127.0.0.1:##PORT_BASE4##
    RewriteRule ^/(.*)$ https://%{SERVER_NAME}:##PORT_BASE4##/$1 [L,R]
 
    # redirect test
-   RewriteRule ^/rewrite0$ https://%{SERVER_NAME}:##PORT_BASE4##/rewrite1 [L,R=307]
-   RewriteRule ^/rewrite1$ https://%{SERVER_NAME}:##PORT_BASE4##/error/check.html [L,R=307]
+   RewriteRule ^/rewrite0$ https://%{SERVER_NAME}:##PORT_BASE4##/rewrite1 [L,R]
+   RewriteRule ^/rewrite1$ https://%{SERVER_NAME}:##PORT_BASE4##/error/check.html [L,R]
 
    CLID_Cookie              123456 clid /cookie.html
 <IfDefine !fp>
