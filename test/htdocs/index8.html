@@ -5,9 +5,21 @@
 
 <script type="text/javascript">
 
+function clidDec64(s) {
+    var e={},i,b=0,c,x,l=0,a,r='',w=String.fromCharCode,L=s.length;
+    var A="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    for(i=0;i<64;i++){e[A.charAt(i)]=i;}
+    for(x=0;x<L;x++){
+        c=e[s.charAt(x)];b=(b<<6)+c;l+=6;
+        while(l>=8){((a=(b>>>(l-=8))&0xff)||(x<(L-2)))&&(r+=w(a));}
+    }
+    return r;
+}
+
 var link = "index3.html";
 var req;
-var param = "<xml>data</xml>";
+var rawparam = "PHhtbD5kYXRhPC94bWw+Cg==";
+var param = clidDec64(rawparam);
 
 if(window.XMLHttpRequest) {
  req = new XMLHttpRequest();
@@ -25,14 +37,13 @@ req.onreadystatechange = function() {
   if(req.readyState == 4){
     if(req.status == 200) {
       var res = req.responseText;
-      var d = document;
-      if(d.parentNode) {
-        d = d.parentNode;
+      var ct = req.getResponseHeader("Content-Type");
+      if(ct == null) {
+         ct = "text/plain";
       }
-      var c = d.firstChild;
-      var n = d.createTextNode(res);
-      d.replaceChild(n, c);
-      if(n) alert("ok");
+      var doc = document.open(ct);
+      doc.write(res);
+      doc.close();
      } else {
       window.location = "/index.html";
      }

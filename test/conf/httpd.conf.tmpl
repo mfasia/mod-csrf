@@ -229,6 +229,8 @@ Listen                  127.0.0.1:##PORT_BASE4##
    SSLCertificateChainFile  ssl/cacert.pem
    SSLVerifyDepth           3
 
+   PARP_BodyData            */*
+
    CSRF_Enable              off
 
    # redirect to "real" server ServerName (to ensure the browser
@@ -236,6 +238,10 @@ Listen                  127.0.0.1:##PORT_BASE4##
    RewriteEngine on
    RewriteCond %{HTTP:Host} !server1
    RewriteRule ^/(.*)$ https://%{SERVER_NAME}:##PORT_BASE4##/$1 [L,R]
+
+   # redirect test
+   RewriteRule ^/rewrite0$ https://%{SERVER_NAME}:##PORT_BASE4##/rewrite1 [L,R=307]
+   RewriteRule ^/rewrite1$ https://%{SERVER_NAME}:##PORT_BASE4##/error/check.html [L,R=307]
 
    CLID_Cookie              123456 clid /cookie.html
 <IfDefine !fp>

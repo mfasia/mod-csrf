@@ -105,6 +105,17 @@ APR_DECLARE_OPTIONAL_FN(char *, ssl_var_lookup, (apr_pool_t *, server_rec *,
                                                  conn_rec *, request_rec *, char *));
 static APR_OPTIONAL_FN_TYPE(ssl_var_lookup) *clid_ssl_var = NULL;
 
+/* CLID_USE_JS enables POST request handling using a HTML page which
+ * performs the ETag check call and sends the POST request again. */
+#ifdef CLID_USE_JS
+/* mod_parp, forward and optional function */
+APR_DECLARE_OPTIONAL_FN(apr_table_t *, parp_hp_table, (request_rec *));
+static APR_OPTIONAL_FN_TYPE(parp_hp_table) *clid_parp_hp_table_fn = NULL;
+
+APR_DECLARE_OPTIONAL_FN(char *, parp_body_data, (request_rec *, apr_size_t *));
+static APR_OPTIONAL_FN_TYPE(parp_body_data) *clid_parp_body_data_fn = NULL;
+#endif
+
 /************************************************************************
  * structures
  ***********************************************************************/
@@ -155,10 +166,6 @@ typedef struct {
  ***********************************************************************/
 module AP_MODULE_DECLARE_DATA clientid_module;
 #define CLID_ICASE_MAGIC  ((void *)(&clientid_module))
-
-/* mod_parp, forward and optional function */
-APR_DECLARE_OPTIONAL_FN(apr_table_t *, parp_hp_table, (request_rec *));
-static APR_OPTIONAL_FN_TYPE(parp_hp_table) *clid_parp_hp_table_fn = NULL;
 
 /************************************************************************
  * private
@@ -782,7 +789,8 @@ static int clid_redirect2check(request_rec *r, clid_config_t *conf) {
   char *redirect_page = apr_psprintf(r->pool, "%s%s",
                                      clid_this_host(r),
                                      conf->check);
-  // TODO handle any request containing a body
+
+#ifdef CLID_USE_JS
   if(r->method_number == M_POST) {
     /* POST requests are an issue: doesn't matter if we respond
      * by 302 or 307, browser (FF) never sends the
@@ -793,60 +801,8 @@ static int clid_redirect2check(request_rec *r, clid_config_t *conf) {
      * with rule violations. */
     const char *contentType = apr_table_get(r->headers_in, "Content-Type");
     if(contentType != NULL) {
-      if(strcasestr(contentType, "application/x-www-form-urlencoded")) {
-        apr_table_add(r->notes, "parp", "mod_clientid"); 
-      }
+      apr_table_add(r->notes, "parp", "mod_clientid"); 
     }
-//    } else {
-//      contentType = apr_pstrdup(r->pool, "");
-//    }
-//    ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
-//                  CLID_LOGD_PFX"Return verifcation page, id=%s",
-//                  clid_unique_id(r));
-//
-//    // this is not the application's page, don't allow caching:
-//    apr_table_add(r->headers_out, "Cache-Control", "no-cache, no-store");
-//
-//    // allows custom js (ajax call) to detect and handle this response:
-//    apr_table_add(r->headers_out, CLID_HDR, "verify");
-//
-//    ap_set_content_type(r, "text/html");
-//
-//    ap_rprintf(r, "<html><head><title>Session Validation</title>\n");
-//    ap_rprintf(r, "<script type=\"text/javascript\">\n");
-//    ap_rprintf(r, "var link = \"%s\";\n", ap_escape_html(r->pool, conf->check));
-//    ap_rprintf(r, "var req;\n");
-//    ap_rprintf(r, "if(window.XMLHttpRequest) {\n");
-//    ap_rprintf(r, " req = new XMLHttpRequest();\n");
-//    ap_rprintf(r, "} else {\n");
-//    ap_rprintf(r, " req = new ActiveXObject(\"Microsoft.XMLHTTP\");\n");
-//    ap_rprintf(r, "}\n");
-//    ap_rprintf(r, "req.open(\"GET\", link, true);\n");
-//    ap_rprintf(r, "req.setRequestHeader(\""CLID_HDR"\", \"ping\");\n");
-//    ap_rprintf(r, "req.onreadystatechange = function() {\n");
-//    ap_rprintf(r, "  if(req.readyState == 4){\n");
-//    ap_rprintf(r, "    if(req.status == 200) {\n");
-//    ap_rprintf(r, "      document.forms[0].submit();\n");
-//    ap_rprintf(r, "     } else {\n");
-//    ap_rprintf(r, "      window.location = \"%s\";\n",
-//               ap_escape_html(r->pool, r->unparsed_uri));
-//    ap_rprintf(r, "     }\n");
-//    ap_rprintf(r, "  }\n");
-//    ap_rprintf(r, "}\n");
-//    ap_rprintf(r, "req.send();\n");
-//    ap_rprintf(r, "\n");
-//    ap_rprintf(r, "</script>\n");
-//    ap_rprintf(r, "</head><body>Please continue here: \n");
-//    ap_rprintf(r, "<form method=\"POST\" action=\"%s\">\n",
-//               ap_escape_html(r->pool, r->unparsed_uri));
-//    ap_rprintf(r, "<input type=\"submit\" />\n");
-//    ap_rprintf(r, "<input type=\"hidden\" name=\"content-type\" value=\"%s\"/>\n",
-//               ap_escape_html(r->pool, contentType));
-//    TODO add current request parameters
-//    TODO self submitting form works only for application/x-www-form-urlencoded
-//    ap_rprintf(r, "</form>\n");
-//    ap_rprintf(r, "</body></html>\n");
-
     r->handler = apr_pstrdup(r->pool, CLID_HANDLER);
     apr_table_set(r->notes, CLID_HANDLER, CLID_HANDLER);
     return DECLINED;
@@ -858,6 +814,14 @@ static int clid_redirect2check(request_rec *r, clid_config_t *conf) {
     apr_table_set(r->headers_out, "Location", redirect_page);
     return HTTP_MOVED_TEMPORARILY;
   }
+#else
+  ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
+                CLID_LOGD_PFX"Redirect to ETag check page, id=%s",
+                clid_unique_id(r));
+  apr_table_add(r->err_headers_out, "Set-Cookie", origCookie);
+  apr_table_set(r->headers_out, "Location", redirect_page);
+  return HTTP_MOVED_TEMPORARILY;
+#endif
 }
 
 /**
@@ -1186,16 +1150,6 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
  * handlers
  ***********************************************************************/
 
-//static apr_status_t clid_out_filter(ap_filter_t *f, apr_bucket_brigade *bb) {
-//  request_rec *r = f->r;
-//  const char *etag = apr_table_get(r->notes, CLID_ETAG_N);
-//  if(etag) {
-//    apr_table_add(r->headers_out, "ETag", etag);
-//  }
-//  ap_remove_output_filter(f);
-//  return ap_pass_brigade(f->next, bb);
-//}
-
 static int clid_fixup(request_rec *r) {
   if(ap_is_initial_req(r)) {
     if(apr_table_get(r->notes, CLID_HANDLER)) {
@@ -1206,6 +1160,8 @@ static int clid_fixup(request_rec *r) {
   return DECLINED;
 }
 
+
+#ifdef CLID_USE_JS
 /**
  * Returns the HTML page containing the JS to re-check POST requests
  */
@@ -1214,6 +1170,10 @@ static int clid_handler(request_rec * r) {
     clid_config_t *conf = ap_get_module_config(r->server->module_config, 
                                                &clientid_module);
     apr_table_t *params = NULL;
+    const char *contentType = apr_table_get(r->headers_in, "Content-Type");
+    if(contentType == NULL) {
+      contentType = apr_pstrdup(r->pool, "");
+    }
     if(clid_parp_hp_table_fn) {
       params = clid_parp_hp_table_fn(r);
     }
@@ -1224,6 +1184,8 @@ static int clid_handler(request_rec * r) {
     // this is not the application's page, don't allow caching:
     apr_table_add(r->headers_out, "Cache-Control", "no-cache, no-store");
 
+    /* TODO the JS won't be processed by clients not expecting a html page (ajax)
+     * => detect those clients and provide an alternative check */
     // allows custom js (ajax call) to detect and handle this response:
     apr_table_add(r->headers_out, CLID_HDR, "verify");
 
@@ -1231,41 +1193,94 @@ static int clid_handler(request_rec * r) {
 
     ap_rprintf(r, "<html><head><title>Session Validation</title>\n");
     ap_rprintf(r, "<script type=\"text/javascript\">\n");
-    ap_rprintf(r, "var link = \"%s\";\n", ap_escape_html(r->pool, conf->check));
-    ap_rprintf(r, "var req;\n");
+    ap_rprintf(r, "var checkLink = \"%s\";\n", ap_escape_html(r->pool, conf->check));
+    ap_rprintf(r, "var checkReq;\n");
     ap_rprintf(r, "if(window.XMLHttpRequest) {\n");
-    ap_rprintf(r, " req = new XMLHttpRequest();\n");
+    ap_rprintf(r, " checkReq = new XMLHttpRequest();\n");
     ap_rprintf(r, "} else {\n");
-    ap_rprintf(r, " req = new ActiveXObject(\"Microsoft.XMLHTTP\");\n");
+    ap_rprintf(r, " checkReq = new ActiveXObject(\"Microsoft.XMLHTTP\");\n");
     ap_rprintf(r, "}\n");
-    ap_rprintf(r, "req.open(\"GET\", link, true);\n");
-    ap_rprintf(r, "req.setRequestHeader(\""CLID_HDR"\", \"ping\");\n");
-    ap_rprintf(r, "req.onreadystatechange = function() {\n");
-    ap_rprintf(r, "  if(req.readyState == 4){\n");
-    ap_rprintf(r, "     if(req.status == 200) {\n");
+    ap_rprintf(r, "checkReq.open(\"GET\", checkLink, true);\n");
+    ap_rprintf(r, "checkReq.setRequestHeader(\""CLID_HDR"\", \"ping\");\n");
+    ap_rprintf(r, "checkReq.onreadystatechange = function() {\n");
+    ap_rprintf(r, "  if(checkReq.readyState == 4){\n");
+    ap_rprintf(r, "     if(checkReq.status == 200) {\n");
     /* we could check the response but it does not really matter: if the ETag check
      * has failed, the next request starts a new session/client id cookie */
     //ap_rprintf(r, "       var resH = this.getResponseHeader(\"%s\");\n", CLID_HDR);
-    //ap_rprintf(r, "       if(resH != null) {\n");
-    ap_rprintf(r, "         document.forms[0].submit();\n");
-    //ap_rprintf(r, "       } else {\n");
-    //ap_rprintf(r, "         window.location = \"%s\";\n",
-    //           ap_escape_html(r->pool, r->unparsed_uri));
-    //ap_rprintf(r, "       }\n");
+    if(params && strcasestr(contentType, "application/x-www-form-urlencoded")) {
+      // we are using a self-submiting form if possible
+      ap_rprintf(r, "         document.forms[0].submit();\n");
+    } else {
+      // fallback to ajax call sending raw post
+      if(contentType && clid_parp_body_data_fn) {
+        apr_size_t len;
+        const char *data = clid_parp_body_data_fn(r, &len);
+        if(data) {
+          int elen = apr_base64_encode_len(len);
+          char *enc = (char *)apr_pcalloc(r->pool, 1 + elen);
+          elen = apr_base64_encode(enc, (const char *)data, len);
+          enc[elen] = '\0';
+          ap_rprintf(r, "          function clidDec64(s) {\n");
+          ap_rprintf(r, "              var e={},i,b=0,c,x,l=0,a,r='',w=String.fromCharCode,L=s.length;\n");
+          ap_rprintf(r, "              var A=\"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/\";\n");
+          ap_rprintf(r, "              for(i=0;i<64;i++){e[A.charAt(i)]=i;}\n");
+          ap_rprintf(r, "              for(x=0;x<L;x++){\n");
+          ap_rprintf(r, "                  c=e[s.charAt(x)];b=(b<<6)+c;l+=6;\n");
+          ap_rprintf(r, "                  while(l>=8){((a=(b>>>(l-=8))&0xff)||(x<(L-2)))&&(r+=w(a));}\n");
+          ap_rprintf(r, "              }\n");
+          ap_rprintf(r, "              return r;\n");
+          ap_rprintf(r, "          }\n");
+          ap_rprintf(r, "          var link = \"%s\";\n",
+               ap_escape_html(r->pool, r->unparsed_uri));
+          ap_rprintf(r, "          var req;\n");
+          ap_rprintf(r, "          var rawparam = \"%s\";\n", enc);
+          ap_rprintf(r, "          var param = clidDec64(rawparam);\n");
+          ap_rprintf(r, "          if(window.XMLHttpRequest) {\n");
+          ap_rprintf(r, "           req = new XMLHttpRequest();\n");
+          ap_rprintf(r, "          } else {\n");
+          ap_rprintf(r, "           req = new ActiveXObject(\"Microsoft.XMLHTTP\");\n");
+          ap_rprintf(r, "          }\n");
+          ap_rprintf(r, "          req.open(\"POST\", link, true);\n");
+          ap_rprintf(r, "          req.setRequestHeader(\"Content-type\", \"%s\");\n",
+                     ap_escape_html(r->pool, contentType));
+          ap_rprintf(r, "          req.setRequestHeader(\"Content-length\", param.length);\n");
+          ap_rprintf(r, "          req.setRequestHeader(\"Connection\", \"close\");\n");
+          ap_rprintf(r, "          req.onreadystatechange = function() {\n");
+          ap_rprintf(r, "            if(req.readyState == 4){\n");
+          ap_rprintf(r, "              if(req.status == 200) {\n");
+          ap_rprintf(r, "                var res = req.responseText;\n");
+          ap_rprintf(r, "                var ct = req.getResponseHeader(\"Content-Type\");\n");
+          ap_rprintf(r, "                if(ct == null) {\n");
+          ap_rprintf(r, "                   ct = \"text/plain\";\n");
+          ap_rprintf(r, "                }\n");
+          ap_rprintf(r, "                var doc = document.open(ct);\n");
+          ap_rprintf(r, "                doc.write(res);\n");
+          ap_rprintf(r, "                doc.close();\n");
+          ap_rprintf(r, "               } else {\n");
+          ap_rprintf(r, "                window.location = \"%s\";\n",
+                     ap_escape_html(r->pool, r->unparsed_uri));
+          ap_rprintf(r, "               }\n");
+          ap_rprintf(r, "            }\n");
+          ap_rprintf(r, "          }\n");
+          ap_rprintf(r, "          req.send(param);\n");
+        }
+      }
+    }
     ap_rprintf(r, "     } else {\n");
     ap_rprintf(r, "       window.location = \"%s\";\n",
                ap_escape_html(r->pool, r->unparsed_uri));
     ap_rprintf(r, "     }\n");
     ap_rprintf(r, "  }\n");
     ap_rprintf(r, "}\n");
-    ap_rprintf(r, "req.send();\n");
+    ap_rprintf(r, "checkReq.send();\n");
     ap_rprintf(r, "\n");
     ap_rprintf(r, "</script>\n");
     ap_rprintf(r, "</head><body>Please continue here: \n");
     ap_rprintf(r, "<form method=\"POST\" action=\"%s\">\n",
                ap_escape_html(r->pool, r->unparsed_uri));
     ap_rprintf(r, "<input type=\"submit\" />\n");
-    // TODO form submit works for application/x-www-form-urlencoded POST only!!
+
     if(params) {
       int i;
       apr_table_entry_t *entry = (apr_table_entry_t *)apr_table_elts(params)->elts;
@@ -1294,6 +1309,7 @@ static int clid_handler(request_rec * r) {
   }
   return DECLINED;
 }
+#endif
 
 static int clid_header_parser_request(request_rec *r) {
   if(ap_is_initial_req(r)) {
@@ -1419,13 +1435,17 @@ static int clid_post_config(apr_pool_t *pconf, apr_pool_t *plog,
     exit(1);
   }
 
+#ifdef CLID_USE_JS
   if(ap_find_linked_module("mod_parp.c") == NULL) {
     ap_log_error(APLOG_MARK, APLOG_WARNING, 0, bs, 
                  CLID_LOG_PFX(007)"mod_parp not available");
     clid_parp_hp_table_fn = NULL;
+    clid_parp_body_data_fn = NULL;
   } else {
     clid_parp_hp_table_fn = APR_RETRIEVE_OPTIONAL_FN(parp_hp_table);
+    clid_parp_body_data_fn = APR_RETRIEVE_OPTIONAL_FN(parp_body_data);
   }
+#endif
 
   if(conf->lockFile) {
     clid_user_t *u = clid_get_user_conf(bs);
@@ -1515,10 +1535,6 @@ static int clid_post_config(apr_pool_t *pconf, apr_pool_t *plog,
   }
   return DECLINED;
 }
-
-//static void clid_insert_filter(request_rec *r) {
-//  ap_add_output_filter("clid_out_filter", NULL, r, r->connection);
-//}
 
 /************************************************************************
  * directiv handlers 
@@ -1716,9 +1732,9 @@ static void clid_register_hooks(apr_pool_t * p) {
   ap_hook_child_init(clid_child_init, NULL, NULL, APR_HOOK_MIDDLE);
   ap_hook_test_config(clid_config_test, NULL,NULL, APR_HOOK_MIDDLE);
   ap_hook_fixups(clid_fixup, pre, NULL, APR_HOOK_MIDDLE);
+#ifdef CLID_USE_JS
   ap_hook_handler(clid_handler, NULL, NULL, APR_HOOK_MIDDLE);
-//  ap_register_output_filter( "clid_out_filter", clid_out_filter, NULL, AP_FTYPE_RESOURCE+1);
-//  ap_hook_insert_filter(clid_insert_filter, NULL, NULL, APR_HOOK_MIDDLE);
+#endif
 }
 
 /************************************************************************
