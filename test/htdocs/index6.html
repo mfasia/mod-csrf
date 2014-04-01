@@ -15,7 +15,7 @@ function autoStart() {
 }
 
 function doPOST() {
-  var url = "update.txt";
+  var url = "/update.txt" + "?" + "id=" + counter1;
   var params = "foo=" + dec64("YmFyCg==") + "&name=alice";
   var update = document.getElementById("autoupdate");
   var http = new XMLHttpRequest();
