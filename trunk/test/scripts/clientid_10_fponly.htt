@@ -161,6 +161,8 @@ __Cookie: clid=$COOKIE; clidchk=$COOKIE2
 __Req: 06
 __
 _EXPECT . "Set-Cookie: clid=; Max-Age=0";
+_EXPECT . "!ETag");
+_EXPECT . "!Last-Modified"
 _EXPECT . "Your session has been invalidated due to an unexpected behavior of your browser."
 _WAIT
 _CLOSE
@@ -201,6 +203,8 @@ __If-None-Match: "9d5cd87c6365ec6d49cb23f162a2f80c"
 __Req: 06.b
 __
 _EXPECT . "Set-Cookie: clid=; Max-Age=0";
+_EXPECT . "!ETag");
+_EXPECT . "!Last-Modified"
 _EXPECT . "Your session has been invalidated due to an unexpected behavior of your browser."
 _WAIT
 _CLOSE
