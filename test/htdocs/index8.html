@@ -16,46 +16,57 @@ function clidDec64(s) {
     return r;
 }
 
-var link = "index3.html";
-var req;
-var rawparam = "PHhtbD5kYXRhPC94bWw+Cg==";
-var param = clidDec64(rawparam);
-
-if(window.XMLHttpRequest) {
- req = new XMLHttpRequest();
-} else {
- req = new ActiveXObject("Microsoft.XMLHTTP");
+function dummy() {
+  alert("OK");
 }
 
-req.open("POST", link, true);
-
-req.setRequestHeader("Content-type", "text/xml");
-req.setRequestHeader("Content-length", param.length);
-req.setRequestHeader("Connection", "close");
-
-req.onreadystatechange = function() {
-  if(req.readyState == 4){
-    if(req.status == 200) {
-      var res = req.responseText;
-      var ct = req.getResponseHeader("Content-Type");
-      if(ct == null) {
-         ct = "text/plain";
-      }
-      var doc = document.open(ct);
-      doc.write(res);
-      doc.close();
-     } else {
-      window.location = "/index.html";
-     }
+function postXML() {
+  var link = "index3.html";
+  var rawparam = "PHhtbD5kYXRhPC94bWw+Cg==";
+  var param = clidDec64(rawparam);
+      
+  var req;
+  if(window.XMLHttpRequest) {
+    req = new XMLHttpRequest();
+  } else {
+    req = new ActiveXObject("Microsoft.XMLHTTP");
   }
-}
-req.send(param);
 
+  req.open("POST", link, true);
+
+  req.setRequestHeader("Content-type", "text/xml");
+  req.setRequestHeader("Content-length", param.length);
+  req.setRequestHeader("Connection", "close");
+
+  req.onreadystatechange = function() {
+    if(req.readyState == 4){
+      if(req.status == 200) {
+        var res = req.responseText;
+          var ct = req.getResponseHeader("Content-Type");
+        if(ct == null) {
+          ct = "text/plain";
+        }
+        var doc = document.open(ct);
+        doc.write(res);
+        doc.close();
+      } else {
+        window.location = "/index.html";
+      }
+    }
+  }
+  req.send(param);
+}
 </script>
 
   </head>
 
   <body>
     <h1>page 8</h1>
+
+<form name="send" action="">
+ <input type="button" value="submit XML" onclick="postXML()">
+</form>
+
+
   </body>
 </html>

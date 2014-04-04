@@ -79,6 +79,7 @@ static const char g_revision[] = "0.8";
 
 // status header (verify|ok) or query
 #define CLID_HDR       "X-ClientId"
+#define CLID_Q_PDS     "clid_post_data"
 
 #define CLID_HANDLER   "mod_clientid:handler"
 #define CLID_COOKIE_N  "chk"
@@ -106,16 +107,12 @@ APR_DECLARE_OPTIONAL_FN(char *, ssl_var_lookup, (apr_pool_t *, server_rec *,
                                                  conn_rec *, request_rec *, char *));
 static APR_OPTIONAL_FN_TYPE(ssl_var_lookup) *clid_ssl_var = NULL;
 
-/* CLID_USE_JS enables POST request handling using a HTML page which
- * performs the ETag check call and sends the POST request again. */
-#ifdef CLID_USE_JS
 /* mod_parp, forward and optional function */
 APR_DECLARE_OPTIONAL_FN(apr_table_t *, parp_hp_table, (request_rec *));
 static APR_OPTIONAL_FN_TYPE(parp_hp_table) *clid_parp_hp_table_fn = NULL;
 
 APR_DECLARE_OPTIONAL_FN(char *, parp_body_data, (request_rec *, apr_size_t *));
 static APR_OPTIONAL_FN_TYPE(parp_body_data) *clid_parp_body_data_fn = NULL;
-#endif
 
 /************************************************************************
  * structures
@@ -148,6 +145,7 @@ typedef struct {
 typedef struct {
   // global, internal config:
   char *lockFile;
+  char *pdsPath;
   // per vhost user config:
   int require;                           // policy
   const char *keyName;                   // cookie name
@@ -327,6 +325,34 @@ static int clid_table_test(clid_user_t *u, apr_uint32_t id) {
      return 1;
    }
    return 0;
+}
+
+static char *clid_getRequestid(request_rec *r) {
+  const char *sec = apr_table_get(r->subprocess_env, CLID_RND);
+  char *data = apr_psprintf(r->pool, "%s%s%s%s",
+                            r->unparsed_uri,
+                            sec,
+                            strchr(r->unparsed_uri, '?') ? "&" : "?",
+                            CLID_Q_PDS);
+  char *md = ap_md5_binary(r->pool, (unsigned char *)data, strlen(data));
+  return md;
+}
+
+static int clid_hasbody(request_rec *r) {
+  const char *cl = apr_table_get(r->headers_in, "Content-Length");
+  const char *te = apr_table_get(r->headers_in, "Transfer-Encoding");
+  if(cl) {
+    return 1;
+  }
+  if(te) {
+    if(strcasecmp(te, "chunked") == 0) {
+      return 1;
+    }
+  }
+  if(r->read_chunked) {
+    return 1;
+  }
+  return 0;
 }
 
 /**
@@ -554,7 +580,28 @@ static char *clid_get_remove_cookie(request_rec *r, const char *name) {
   const char *cookie_h = apr_table_get(r->headers_in, "Cookie");
   if(cookie_h) {
     char *cn = apr_pstrcat(r->pool, name, "=", NULL);
-    char *p = ap_strcasestr(cookie_h, cn);
+    char *pt = ap_strcasestr(cookie_h, cn);
+    char *p = NULL;
+    while(pt && !p) {
+      // ensure we found the real cookie (and not an ending b64 str)
+      if(pt == cookie_h) {
+        // @beginning of the header
+        p = pt;
+        pt = NULL;
+      } else {
+        char pre = pt[-1];
+        if(pre == ' ' ||
+           pre == ';') {
+          // @beginnin of a cookie
+          p = pt;
+          pt = NULL;
+        } else {
+          // found patter somewhere else
+          pt++;
+          pt = ap_strcasestr(pt, cn);
+        }
+      }
+    }
     if(p) {
       char *value = NULL;
       char *clean = p;
@@ -784,51 +831,83 @@ static char *clid_create_cookie(request_rec *r, clid_config_t *conf,
  */ 
 static int clid_redirect2check(request_rec *r, clid_config_t *conf) {
   char *cookieName = apr_pstrcat(r->pool, conf->keyName, CLID_COOKIE_N, NULL); 
-  char *origCookie = apr_pstrcat(r->pool, cookieName, "=",
+  char *redirectCookie = apr_pstrcat(r->pool, cookieName, "=",
                                  clid_enc64(r, r->unparsed_uri, conf->key),
                                  "; Max-Age=8; Path=", conf->check, NULL);
   char *redirect_page = apr_psprintf(r->pool, "%s%s",
                                      clid_this_host(r),
                                      conf->check);
+  int rc = HTTP_MOVED_TEMPORARILY;
 
-#ifdef CLID_USE_JS
-  if(r->method_number == M_POST) {
-    /* POST requests are an issue: doesn't matter if we respond
-     * by 302 or 307, browser (FF) never sends the
-     * If-None-Match header (neither for the POST itself nor
-     * when following a redrect).
-     * While we could accept this limitation for the initial
-     * id creation, we really need a solution when dealing
-     * with rule violations. */
-    const char *contentType = apr_table_get(r->headers_in, "Content-Type");
-    if(contentType != NULL) {
-      apr_table_add(r->notes, "parp", "mod_clientid"); 
+  /* Notes about POST requests (body data):
+   * - We have to store the request body because the browser
+   *   won't send us the If-None-Match header if we answer
+   *   by a 307.
+   *   While we could accept this limitation for the initial
+   *   id creation, we really need a solution when dealing
+   *   with rule violations.
+   *   We use either an internal post data store (pds) of
+   *   store the data at the client within a HTML page and
+   *   use JavaScript to do the ETag check and re-post the
+   *   data.
+   * - Browser (FF) never sends the If-None-Match header
+   *   to 302/307 responses. But it does of redirected
+   *   twice. This is true if post is submitted by a
+   *   regular HTML form but ajax requests may react
+   *   different...
+   */
+  if(conf->pdsPath == NULL) {
+    // not post data store => use client side data store
+    if(r->method_number == M_POST) {
+      const char *contentType = apr_table_get(r->headers_in, "Content-Type");
+      if(contentType != NULL) {
+        apr_table_add(r->notes, "parp", "mod_clientid"); 
+      }
+      r->handler = apr_pstrdup(r->pool, CLID_HANDLER);
+      apr_table_set(r->notes, CLID_HANDLER, CLID_HANDLER);
+      return DECLINED;
+    } else {
+      if(clid_hasbody(r)) {
+        ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_WARNING, 0, r,
+                      CLID_LOG_PFX(30)"Request has body"
+                      " but method '%s' is not supported, id=%s",
+                      r->method,
+                      clid_unique_id(r));
+      }
+      ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
+                    CLID_LOGD_PFX"Redirect to ETag check page, id=%s",
+                    clid_unique_id(r));
+      apr_table_add(r->err_headers_out, "Set-Cookie", redirectCookie);
+      apr_table_set(r->headers_out, "Location", redirect_page);
+      return HTTP_MOVED_TEMPORARILY;
     }
-    r->handler = apr_pstrdup(r->pool, CLID_HANDLER);
-    apr_table_set(r->notes, CLID_HANDLER, CLID_HANDLER);
-    return DECLINED;
   } else {
+    // using the post data store...
+    if(clid_hasbody(r)) {
+      char *origUri = apr_psprintf(r->pool, "%s%s%s",
+                                   r->unparsed_uri,
+                                   strchr(r->unparsed_uri, '?') ? "&" : "?",
+                                   CLID_Q_PDS);
+      char *reqid = clid_getRequestid(r); 
+      // POST (body data) requies two redirects
+      redirect_page = apr_psprintf(r->pool, "%s%s",
+                                   clid_this_host(r),
+                                   CLID_POST_CHECK_URL);
+      /* and we need to store the request data in order to
+       * inject it when returing from the check page */
+      redirectCookie = apr_pstrcat(r->pool, cookieName, "=",
+                                   clid_enc64(r, origUri, conf->key),
+                                   "; Max-Age=8; Path=", conf->check, NULL);
+      apr_table_set(r->notes, CLID_Q_PDS, reqid);
+      rc = DECLINED;
+    }
     ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
                   CLID_LOGD_PFX"Redirect to ETag check page, id=%s",
                   clid_unique_id(r));
-    apr_table_add(r->err_headers_out, "Set-Cookie", origCookie);
+    apr_table_add(r->err_headers_out, "Set-Cookie", redirectCookie);
     apr_table_set(r->headers_out, "Location", redirect_page);
-    return HTTP_MOVED_TEMPORARILY;
+    return rc;
   }
-#else
-  if(r->method_number == M_POST) {
-    // POST (body data) requies two redirects
-    redirect_page = apr_psprintf(r->pool, "%s%s",
-                                 clid_this_host(r),
-                                 CLID_POST_CHECK_URL);
-  }
-  ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
-                CLID_LOGD_PFX"Redirect to ETag check page, id=%s",
-                clid_unique_id(r));
-  apr_table_add(r->err_headers_out, "Set-Cookie", origCookie);
-  apr_table_set(r->headers_out, "Location", redirect_page);
-  return HTTP_MOVED_TEMPORARILY;
-#endif
 }
 
 /**
@@ -924,9 +1003,8 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
                                        conf->check);
     apr_table_set(r->headers_out, "Location", redirect_page);
     apr_table_add(r->err_headers_out, "Cache-Control", "no-cache, no-store");
-    return HTTP_TEMPORARY_REDIRECT;
+    return HTTP_MOVED_TEMPORARILY;
   }
-
 
   /* 
    * cookie check page
@@ -943,9 +1021,9 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
         if(origUrl) {
           char *cookieName = apr_pstrcat(r->pool, conf->keyName, 
                                          CLID_COOKIE_N, NULL); 
-          char *origCookie = apr_pstrcat(r->pool, cookieName, "=",
-                                         clid_enc64(r, origUrl, conf->key),
-                                         "; Max-Age=8; Path=", conf->check, NULL);
+          char *redirectCookie = apr_pstrcat(r->pool, cookieName, "=",
+                                             clid_enc64(r, origUrl, conf->key),
+                                             "; Max-Age=8; Path=", conf->check, NULL);
           char *redirect_page = apr_psprintf(r->pool, "%s%s",
                                              clid_this_host(r),
                                              conf->check);
@@ -954,7 +1032,7 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
                         "=> redirect to ETag check, id=%s",
                         origUrl, clid_unique_id(r));
           apr_table_set(r->headers_out, "Location", redirect_page);
-          apr_table_add(r->err_headers_out, "Set-Cookie", origCookie);
+          apr_table_add(r->err_headers_out, "Set-Cookie", redirectCookie);
           apr_table_add(r->err_headers_out, "Cache-Control", "no-cache, no-store");
           return HTTP_MOVED_TEMPORARILY;
         } else {
@@ -1099,15 +1177,17 @@ static int clid_setid(request_rec *r, clid_config_t *conf) {
                                         "=; Max-Age=0; Path=/", NULL);
         char *clearETAGCookie = apr_pstrcat(r->pool, conf->keyName, CLID_COOKIE_N,
                                             "=; Max-Age=0; Path=", conf->check, NULL); 
+        apr_table_add(r->err_headers_out, CLID_HDR, "failed");
         apr_table_add(r->err_headers_out, "Set-Cookie", clearCookie);
         apr_table_add(r->err_headers_out, "Set-Cookie", clearETAGCookie);
-        // better: use <meta http-equiv="Pragma" content="no-cache">
-        //apr_table_add(r->headers_out, "Cache-Control", "no-cache, no-store");
+        /* page should not be cached but we won't set 
+           "Cache-Control: no-cache, no-store" neither. better: unset ETag */
+        apr_table_set(r->notes, CLID_ETAG_N, "");
       }
       ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                     CLID_LOG_PFX(023)"ETag check failed, id=%s",
                     clid_unique_id(r));
-        return DECLINED;
+      return DECLINED;
     }
   }
 
@@ -1181,15 +1261,20 @@ static int clid_fixup(request_rec *r) {
   return DECLINED;
 }
 
+/* CLID_USE_JS enables POST request handling using a HTML page which
+ * performs the ETag check call and sends the POST request again. */
 
-#ifdef CLID_USE_JS
 /**
  * Returns the HTML page containing the JS to re-check POST requests
  */
 static int clid_handler(request_rec * r) {
+  clid_config_t *conf = ap_get_module_config(r->server->module_config, 
+                                             &clientid_module);
+  if(conf->pdsPath != NULL) {
+    // uses post data store
+    return DECLINED;
+  }
   if(strcmp(r->handler, CLID_HANDLER) == 0) {
-    clid_config_t *conf = ap_get_module_config(r->server->module_config, 
-                                               &clientid_module);
     apr_table_t *params = NULL;
     const char *contentType = apr_table_get(r->headers_in, "Content-Type");
     if(contentType == NULL) {
@@ -1201,7 +1286,7 @@ static int clid_handler(request_rec * r) {
     ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
                   CLID_LOGD_PFX"Return verifcation page, id=%s",
                   clid_unique_id(r));
-
+    
     // this is not the application's page, don't allow caching:
     apr_table_add(r->headers_out, "Cache-Control", "no-cache, no-store");
 
@@ -1229,6 +1314,12 @@ static int clid_handler(request_rec * r) {
     /* we could check the response but it does not really matter: if the ETag check
      * has failed, the next request starts a new session/client id cookie */
     //ap_rprintf(r, "       var resH = this.getResponseHeader(\"%s\");\n", CLID_HDR);
+    //ap_rprintf(r, "       if(resH != null) {\n");
+    //ap_rprintf(r, "         if(resH != \"OK\") {\n");
+    //ap_rprintf(r, "           window.location = \"%s\";\n",
+    //           ap_escape_html(r->pool, r->unparsed_uri));
+    //ap_rprintf(r, "         }\n");
+    //ap_rprintf(r, "       }\n");
     if(params && strcasestr(contentType, "application/x-www-form-urlencoded")) {
       // we are using a self-submiting form if possible
       ap_rprintf(r, "         document.forms[0].submit();\n");
@@ -1330,9 +1421,35 @@ static int clid_handler(request_rec * r) {
   }
   return DECLINED;
 }
-#endif
 
-static int clid_header_parser_request(request_rec *r) {
+static int clid_header_parser_pds(request_rec *r) {
+  if(ap_is_initial_req(r)) {
+    const char *reqid = apr_table_get(r->notes, CLID_Q_PDS);
+    clid_config_t *conf = ap_get_module_config(r->server->module_config, 
+                                               &clientid_module);
+    if(conf->pdsPath == NULL) {
+      // no post data store
+      return DECLINED;
+    }
+    if(reqid) {
+      if(clid_parp_body_data_fn) {
+        apr_size_t len;
+        const char *data = clid_parp_body_data_fn(r, &len);
+        if(data) {
+          // TODO store the data
+          // TODO store the data
+          // TODO store the data
+          // TODO store the data
+          // TODO store the data
+        }
+      }
+      return HTTP_MOVED_TEMPORARILY;
+    }
+  }
+  return DECLINED;
+}
+
+static int clid_header_parser(request_rec *r) {
   if(ap_is_initial_req(r)) {
     clid_config_t *conf = ap_get_module_config(r->server->module_config, 
                                                &clientid_module);
@@ -1430,6 +1547,11 @@ static void clid_child_init(apr_pool_t *p, server_rec *bs) {
   if(conf && u->lock) {
     apr_global_mutex_child_init(&u->lock, conf->lockFile, p);
   }
+  if(conf->pdsPath) {
+    apr_dir_make_recursive(conf->pdsPath, APR_FPROT_UREAD|APR_FPROT_UWRITE|APR_FPROT_UEXECUTE|
+                           APR_FPROT_GREAD|APR_FPROT_GWRITE|APR_FPROT_GEXECUTE|
+                           APR_FINFO_WPROT, p);
+  }
 }
 
 /**
@@ -1456,7 +1578,6 @@ static int clid_post_config(apr_pool_t *pconf, apr_pool_t *plog,
     exit(1);
   }
 
-#ifdef CLID_USE_JS
   if(ap_find_linked_module("mod_parp.c") == NULL) {
     ap_log_error(APLOG_MARK, APLOG_WARNING, 0, bs, 
                  CLID_LOG_PFX(007)"mod_parp not available");
@@ -1466,7 +1587,6 @@ static int clid_post_config(apr_pool_t *pconf, apr_pool_t *plog,
     clid_parp_hp_table_fn = APR_RETRIEVE_OPTIONAL_FN(parp_hp_table);
     clid_parp_body_data_fn = APR_RETRIEVE_OPTIONAL_FN(parp_body_data);
   }
-#endif
 
   if(conf->lockFile) {
     clid_user_t *u = clid_get_user_conf(bs);
@@ -1557,6 +1677,21 @@ static int clid_post_config(apr_pool_t *pconf, apr_pool_t *plog,
   return DECLINED;
 }
 
+static apr_status_t clid_out_filter(ap_filter_t *f, apr_bucket_brigade *bb) {
+  request_rec *r = f->r;
+  if(r->status == HTTP_OK && apr_table_get(r->notes, CLID_ETAG_N)) {
+    // page access, no redirect => client must not cache THIS page
+    apr_table_unset(r->headers_out, "ETag");
+    apr_table_unset(r->headers_out, "Last-Modified");
+  }
+  ap_remove_output_filter(f);
+  return ap_pass_brigade(f->next, bb);
+}
+
+static void clid_insert_filter(request_rec *r) {
+  ap_add_output_filter("clid_out_filter", NULL, r, r->connection);
+}
+
 /************************************************************************
  * directiv handlers 
  ***********************************************************************/
@@ -1581,6 +1716,7 @@ static void *clid_dir_config_merge(apr_pool_t *p, void *basev, void *addv) {
 static void *clid_srv_config_create(apr_pool_t *p, server_rec *s) {
   clid_config_t *sconf = apr_pcalloc(p, sizeof(clid_config_t));
   sconf->lockFile = NULL;
+  sconf->pdsPath = NULL;
   sconf->require = 0;
   sconf->keyName = NULL;
   sconf->keyPath = NULL;
@@ -1596,6 +1732,7 @@ static void *clid_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
   clid_config_t *add = addv;
 
   sconf->lockFile = base->lockFile;
+  sconf->pdsPath = base->pdsPath;
 
   if(add->keyName) {
     sconf->require = add->require;
@@ -1634,6 +1771,16 @@ const char *clid_semfile_cmd(cmd_parms *cmd, void *dcfg, const char *path) {
   }
   conf->lockFile = ap_server_root_relative(cmd->pool, path);
   return NULL;
+}
+
+const char *clid_pdspath_cmd(cmd_parms *cmd, void *dcfg, const char *path) {
+  clid_config_t *conf = ap_get_module_config(cmd->server->module_config, &clientid_module);
+  const char *err = ap_check_cmd_context(cmd, GLOBAL_ONLY);
+  if (err != NULL) {
+    return err;
+  }
+  conf->pdsPath = ap_server_root_relative(cmd->pool, path);
+  return "post data store has not yet been implemented";
 }
 
 const char *clid_enable_cmd(cmd_parms *cmd, void *dcfg, int flag) {
@@ -1726,6 +1873,10 @@ static const command_rec clid_config_cmds[] = {
                 RSRC_CONF,
                 "CLID_SemFile <path>, file path within the server's file"
                 " system to create the lock file for semaphore/mutex."),
+  AP_INIT_TAKE1("CLID_StorePath", clid_pdspath_cmd, NULL,
+                RSRC_CONF,
+                "CLID_StorePath <path>, path to the directory to store"
+                " request data temporary."),
   AP_INIT_TAKE1("CLID_MaxCheck", clid_generation_cmd, NULL,
                 RSRC_CONF,
                 "CLID_MaxCheck <number>, defines how many times"
@@ -1746,16 +1897,18 @@ static const command_rec clid_config_cmds[] = {
 static void clid_register_hooks(apr_pool_t * p) {
   // TODO: check compatibility to mod_csrf
   static const char *pre[] = { "mod_ssl.c", NULL };
-  static const char *post[] = { "mod_setenvifplus.c", NULL };
+  static const char *post[] = { "mod_setenvifplus.c", "mod_parp.c", NULL };
+  static const char *prepds[] = { "mod_parp.c", NULL };
   ap_hook_post_read_request(clid_post_read_request, pre, post, APR_HOOK_MIDDLE);
-  ap_hook_header_parser(clid_header_parser_request, pre, post, APR_HOOK_FIRST);
+  ap_hook_header_parser(clid_header_parser, pre, post, APR_HOOK_FIRST);
+  ap_hook_header_parser(clid_header_parser_pds, prepds, NULL, APR_HOOK_FIRST);
   ap_hook_post_config(clid_post_config, pre, NULL, APR_HOOK_MIDDLE);
   ap_hook_child_init(clid_child_init, NULL, NULL, APR_HOOK_MIDDLE);
   ap_hook_test_config(clid_config_test, NULL,NULL, APR_HOOK_MIDDLE);
   ap_hook_fixups(clid_fixup, pre, NULL, APR_HOOK_MIDDLE);
-#ifdef CLID_USE_JS
+  ap_register_output_filter("clid_out_filter", clid_out_filter, NULL, AP_FTYPE_RESOURCE+1);
+  ap_hook_insert_filter(clid_insert_filter, NULL, NULL, APR_HOOK_MIDDLE);
   ap_hook_handler(clid_handler, NULL, NULL, APR_HOOK_MIDDLE);
-#endif
 }
 
 /************************************************************************

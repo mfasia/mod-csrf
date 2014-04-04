@@ -123,6 +123,8 @@ __User-Agent: Mozilla 1.0 <CHANGED FP CHANED AGAIN>
 __Cookie: clid=$COOKIE; clidchk=$COOKIE2
 __Req: 08
 __
+_EXPECT . "!ETag");
+_EXPECT . "!Last-Modified"
 _EXPECT . "Your session has been invalidated due to an unexpected behavior of your browser."
 _WAIT
 _CLOSE

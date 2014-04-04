@@ -83,6 +83,10 @@ LoadModule              qos_module ##ROOT##/../test/libexec/mod_qos.so
 
 CLID_SemFile logs/sem
 
+<IfDefine pds>
+CLID_StorePath logs/pds
+</IfDefine>
+
 Listen                  127.0.0.1:##PORT_BASE##
 <VirtualHost 127.0.0.1:##PORT_BASE##>
    ServerName             127.0.0.1

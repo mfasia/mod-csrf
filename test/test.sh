@@ -15,6 +15,7 @@ WARNINGS=0
 # delete the access log file since it is used to generate permit rules
 ./ctl.sh stop 1>/dev/null
 sleep 1
+rm -rf logs/pds
 rm -f logs/*
 ./ctl.sh start 1>/dev/null
 
