@@ -1,0 +1,72 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+  <head>
+    <title>index 8</title>
+
+<script type="text/javascript">
+
+function clidDec64(s) {
+    var e={},i,b=0,c,x,l=0,a,r='',w=String.fromCharCode,L=s.length;
+    var A="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    for(i=0;i<64;i++){e[A.charAt(i)]=i;}
+    for(x=0;x<L;x++){
+        c=e[s.charAt(x)];b=(b<<6)+c;l+=6;
+        while(l>=8){((a=(b>>>(l-=8))&0xff)||(x<(L-2)))&&(r+=w(a));}
+    }
+    return r;
+}
+
+function dummy() {
+  alert("OK");
+}
+
+function postXML() {
+  var link = "index3.html";
+  var rawparam = "PHhtbD5kYXRhPC94bWw+Cg==";
+  var param = clidDec64(rawparam);
+      
+  var req;
+  if(window.XMLHttpRequest) {
+    req = new XMLHttpRequest();
+  } else {
+    req = new ActiveXObject("Microsoft.XMLHTTP");
+  }
+
+  req.open("POST", link, true);
+
+  req.setRequestHeader("Content-type", "text/xml");
+  req.setRequestHeader("Content-length", param.length);
+  req.setRequestHeader("Connection", "close");
+
+  req.onreadystatechange = function() {
+    if(req.readyState == 4){
+      if(req.status == 200) {
+        var res = req.responseText;
+          var ct = req.getResponseHeader("Content-Type");
+        if(ct == null) {
+          ct = "text/plain";
+        }
+        var doc = document.open(ct);
+        doc.write(res);
+        doc.close();
+      } else {
+        window.location = "/index.html";
+      }
+    }
+  }
+  req.send(param);
+}
+</script>
+
+  </head>
+
+  <body>
+    <h1>page 8</h1>
+
+<form name="send" action="">
+ <input type="button" value="submit XML" onclick="postXML()">
+</form>
+
+
+  </body>
+</html>

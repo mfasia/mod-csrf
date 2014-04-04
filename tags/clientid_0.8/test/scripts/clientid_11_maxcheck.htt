@@ -1,0 +1,138 @@
+INCLUDE scripts/ports
+
+CLIENT
+_EXEC ./ctl.sh restart -D fp -D mxc3 1>/dev/null
+
+#
+# create new session
+#
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Host: server1:$PORT_BASE4
+__Req: 01
+__
+_EXPECT . "!start page 3"
+_EXPECT . "!200 OK"
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
+_EXPECT . "Location.*cookie.html"
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
+_WAIT
+_SSL:GET_SESSION SIL
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$COOKIE
+__Req: 02
+__
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
+_EXPECT . "Set-Cookie"
+_EXPECT . "Location.*/check.html"
+_MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$COOKIE; clidchk=$COOKIE2
+__Req: 03
+__
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
+_EXPECT . "!Set-Cookie"
+_EXPECT . "Location.*/index"
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_MATCH headers "ETag: (.*)" ETAG
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$COOKIE; clidchk=$COOKIE2
+__Req: 04
+__
+_EXPECT . "start page 3"
+_EXPECT . "200 OK"
+_WAIT
+_CLOSE
+
+_SET counter=1
+_LOOP 3
+#
+# fingerprint changes => recheck
+#
+_SSL:SET_SESSION $SIL2
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 $counter
+__Cookie: clid=$COOKIE
+__Req: 05.${counter}
+__
+_MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_EXPECT . "Location: .*/error/check.html"
+_EXPECT . "!start page 3"
+_EXPECT . "!200 OK"
+_EXPECT . "Set-Cookie: clidchk"
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL2
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 $counter
+__Cookie: clid=$COOKIE; clidchk=$COOKIE2
+__If-None-Match: "${ETAG}"
+__Req: 08.${counter}
+__
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
+_WAIT
+_CLOSE
+
+_SSL:SET_SESSION $SIL2
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 $counter
+__Cookie: clid=$COOKIE
+__Req: 09.${counter}
+__
+_EXPECT . "start page 3"
+_EXPECT . "!Set-Cookie"
+_WAIT
+_CLOSE
+
+_OP $counter ADD 1 counter
+_END LOOP
+
+#
+# fingerprint changes => no re-check, just a new cookie
+#
+_SSL:SET_SESSION $SIL2
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 99
+__Cookie: clid=$COOKIE
+__Req: 05
+__
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" COOKIE
+_EXPECT . "start page 3"
+_WAIT
+_CLOSE
+
+END
