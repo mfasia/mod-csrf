@@ -7,6 +7,14 @@ INCLUDE scripts/ports
 CLIENT
 
 _REQ 127.0.0.1 $PORT_BASE
+__GET / HTTP/1.1
+__Host: 127.0.0.1:$PORT_BASE
+__
+_EXPECT . "csrfInsert\(\"csrfpId\""
+_WAIT
+_CLOSE
+
+_REQ 127.0.0.1 $PORT_BASE
 __GET /htt/index.html HTTP/1.1
 __Host: 127.0.0.1:$PORT_BASE
 __
