@@ -1,3 +1,7 @@
+Version 0.5
+
+ - Fix CSRF_Enable per location configuration.
+
 Version 0.4
 
  - Adds variable CSRF_REDIRECT.
