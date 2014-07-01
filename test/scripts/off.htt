@@ -1,0 +1,61 @@
+#
+# Test per dir on/off switch
+#
+
+INCLUDE scripts/ports
+
+CLIENT
+
+_REQ 127.0.0.1 $PORT_BASE
+__GET /htt/ HTTP/1.1
+__Host: 127.0.0.1:$PORT_BASE
+__
+_EXPECT . "csrfInsert\(\"csrfpId\""
+_WAIT
+_CLOSE
+
+_REQ 127.0.0.1 $PORT_BASE
+__GET /htt/off/index.html HTTP/1.1
+__Host: 127.0.0.1:$PORT_BASE
+__
+_EXPECT . "!csrfInsert\(\"csrfpId\""
+_WAIT
+_CLOSE
+
+END
+
+SERVER $PORT_BASE1
+
+_RES
+_WAIT
+__HTTP/1.1 200 OK
+__Content-Type: text/html
+__Content-Length: 83
+__
+__<html>
+__<head>
+__<title>htt</title>
+__</head>
+__<body>
+__<p>htt</p>
+__</body>
+__</html>
+_CLOSE
+
+_RES
+_WAIT
+__HTTP/1.1 200 OK
+__Content-Type: text/html
+__Content-Length: 83
+__
+__<html>
+__<head>
+__<title>htt</title>
+__</head>
+__<body>
+__<p>htt</p>
+__</body>
+__</html>
+
+END
+
