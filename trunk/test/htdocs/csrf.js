@@ -62,7 +62,7 @@ function addToNodes(paramName, csrfId) {
 // add id only once
 //	  if((attribute != null) && 
 //	     (attribute.indexOf(csrfId) == -1)) {
-// add if to every ref
+// add id to every ref
 	  if(attribute != null) {
 	    var fragment = null;
 	    var newattribute;

@@ -25,7 +25,7 @@
 /************************************************************************
  * Version
  ***********************************************************************/
-static const char g_revision[] = "0.4";
+static const char g_revision[] = "0.5";
 
 /************************************************************************
  * Includes
@@ -1194,7 +1194,7 @@ static void *csrf_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
 
 const char *csrf_enable_cmd(cmd_parms *cmd, void *dcfg, int flag) {
   if(cmd->path) {
-    csrf_srv_config_t *conf = dcfg;
+    csrf_dir_config_t *conf = dcfg;
     conf->enabled = flag;
   } else {
     csrf_srv_config_t *conf = ap_get_module_config(cmd->server->module_config, &csrf_module);

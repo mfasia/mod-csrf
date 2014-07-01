@@ -149,6 +149,10 @@ Listen                  127.0.0.1:##PORT_BASE##
 </IfDefine>
    </Location>
 
+   <Location /htt/off>
+      CSRF_Enable                       off
+   </Location>
+
 </VirtualHost>
 
 Listen                  127.0.0.1:##PORT_BASE2##
