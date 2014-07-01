@@ -1,0 +1,61 @@
+#
+# Test successful script injection
+#
+
+INCLUDE scripts/ports
+
+CLIENT
+
+_REQ 127.0.0.1 $PORT_BASE
+__GET / HTTP/1.1
+__Host: 127.0.0.1:$PORT_BASE
+__
+_EXPECT . "csrfInsert\(\"csrfpId\""
+_WAIT
+_CLOSE
+
+_REQ 127.0.0.1 $PORT_BASE
+__GET /htt/index.html HTTP/1.1
+__Host: 127.0.0.1:$PORT_BASE
+__
+_EXPECT . "Content-Type: text/html"
+_EXPECT . "Transfer-Encoding: chunked"
+_EXPECT . "<html>"
+_EXPECT . "<head>"
+_EXPECT . "<title>htt</title>"
+_EXPECT . "<script language=\"JavaScript\" src=\"/csrf.js\?i=....\" type=\"text/javascript\"></script>"
+_EXPECT . "</head>"
+_EXPECT . "<body>"
+_EXPECT . "<p>htt</p>"
+_EXPECT . "<script type=\"text/javascript\">"
+_EXPECT . "<!--"
+_EXPECT . "csrfInsert\(\"csrfpId\", \".*\"\);"
+_EXPECT . "//-->"
+_EXPECT . "</script>"
+_EXPECT . "</body>"
+_EXPECT . "</html>"
+_WAIT
+
+END
+
+SERVER $PORT_BASE1
+
+_RES
+_WAIT
+__HTTP/1.1 200 OK
+__Content-Type: text/html
+__Content-Length: 83
+__
+__<html>
+__<head>
+__<title>htt</title>
+__</head>
+#_-</he
+#_FLUSH
+#__ad>
+__<body>
+__<p>htt</p>
+__</body>
+__</html>
+
+END
