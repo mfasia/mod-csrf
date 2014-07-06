@@ -26,6 +26,7 @@ TOP=`pwd`
 
 APACHE_VER=2.2.22
 #APACHE_VER=2.4.3
+APREQ2_VER=2.13
 
 echo "build Apache $APACHE_VER"
 if [ ! -d httpd-${APACHE_VER} ]; then
@@ -47,6 +48,7 @@ ln -s `pwd`/httpd_src/modules/clientid/config.m4 httpd/modules/clientid
 ln -s `pwd`/httpd_src/modules/clientid/Makefile.in httpd/modules/clientid
 
 ADDMOD=""
+ADDMOD="$ADDMOD --prefix=`pwd`/tmp/apache2"
 
 CFLAGS="-DDEFAULT_SERVER_LIMIT=512 -DDEFAULT_THREAD_LIMIT=256 -g -Wall -DI_INSIST_ON_EXTRA_CYCLES_FOR_CLF_COMPLIANCE"
 export CFLAGS 
@@ -89,5 +91,24 @@ if [ $? -ne 0 ]; then
 fi
 
 cd ..
+
+#if [ ! -d libapreq2-${APREQ2_VER} -o ! -d libapreq2 ]; then
+#  echo "$PFX build libapreq2"
+#  sleep 3
+#  cd httpd
+#  make install
+#  if [ $? -ne 0 ]; then
+#    echo "$PFX ERROR"
+#    exit 1
+#  fi
+#  cd ..
+#  gzip -c -d $TOP/3thrdparty/libapreq2-${APREQ2_VER}.tar.gz | tar xf -
+#  rm -f libapreq2
+#  ln -s libapreq2-${APREQ2_VER} libapreq2
+#  cd libapreq2
+#  ./configure --with-apache2-apxs=`pwd`/../tmp/apache2/bin/apxs
+#  make
+#  cd ..
+#fi
 
 echo "END"
