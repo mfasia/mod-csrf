@@ -92,5 +92,33 @@ _SLEEP 100
 _EXPECT EXEC "GET /welcome.html HTTP/1.1. 200 - .. .Mozilla 1.0. ... . id=.* . . 127.0.0.1#.*#.*#.*#[0-9]+#[0-9]+ #.*"
 _EXEC tail -1 logs/access_log
 
+# SSL and FP changes but /welcome.html is excluded
+_REQ server1 SSL:$PORT_BASE4
+__GET /welcome.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 CHANGED
+__Cookie: clid=$COOKIE
+__Req: 07
+__
+_EXPECT . "200 OK"
+_EXPECT . "<title>welcome</title>"
+_EXPECT . "!Set-Cookie"
+_WAIT
+_CLOSE
+
+# SSL and FP changes but *jpg is excluded
+_REQ server1 SSL:$PORT_BASE4
+__GET /images/small.jpg HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 CHANGED
+__Cookie: clid=$COOKIE
+__Req: 08
+__
+_EXPECT . "200 OK"
+_EXPECT . "Content-Type: image/jpeg"
+_EXPECT . "!Set-Cookie"
+_WAIT
+_CLOSE
+
 END
 
