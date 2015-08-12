@@ -24,7 +24,7 @@
 cd `dirname $0`
 TOP=`pwd`
 
-APACHE_VER=2.2.22
+APACHE_VER=2.2.31
 #APACHE_VER=2.4.3
 APREQ2_VER=2.13
 
@@ -47,6 +47,12 @@ ln -s `pwd`/httpd_src/modules/clientid/mod_clientid.c httpd/modules/clientid
 ln -s `pwd`/httpd_src/modules/clientid/config.m4 httpd/modules/clientid
 ln -s `pwd`/httpd_src/modules/clientid/Makefile.in httpd/modules/clientid
 
+rm -rf httpd/modules/fp
+mkdir -p httpd/modules/fp
+ln -s `pwd`/httpd_src/modules/fp/mod_fp.c httpd/modules/fp
+ln -s `pwd`/httpd_src/modules/fp/config.m4 httpd/modules/fp
+ln -s `pwd`/httpd_src/modules/fp/Makefile.in httpd/modules/fp
+
 ADDMOD=""
 ADDMOD="$ADDMOD --prefix=`pwd`/tmp/apache2"
 
@@ -57,7 +63,7 @@ cd httpd
 
 if [ `echo $APACHE_VER | awk '{print substr($0, 1, 3)}'` = "2.4" ]; then
   echo "configure Apache 2.4"
-  ./configure --with-apr=`pwd`/../../apr --with-mpm=worker --enable-modules=all --enable-mods-static=all --with-module=csrf:csrf,clientid:clientid
+  ./configure --with-apr=`pwd`/../../apr --with-mpm=worker --enable-modules=all --enable-mods-static=all --with-module=csrf:csrf,clientid:clientid,fp:fp
   RC=$?
 else
   echo "configure Apache 2.x"
@@ -66,7 +72,7 @@ else
     echo "ERROR"
     exit 1
   fi
-  ./configure --with-mpm=worker --enable-so --enable-csrf=shared --enable-clientid=shared --enable-proxy=shared --enable-ssl --enable-status=shared --enable-info=shared --enable-static-support --enable-unique-id --enable-unique-id=shared --enable-rewrite=shared --enable-dumpio=shared $ADDMOD
+  ./configure --with-mpm=worker --enable-so --enable-csrf=shared --enable-clientid=shared --enable-fp=shared --enable-proxy=shared --enable-ssl --enable-status=shared --enable-info=shared --enable-static-support --enable-unique-id --enable-unique-id=shared --enable-rewrite=shared --enable-dumpio=shared $ADDMOD
   RC=$?
 fi
 
