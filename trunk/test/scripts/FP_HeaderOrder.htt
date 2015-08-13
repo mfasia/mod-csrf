@@ -12,7 +12,7 @@ _EXEC ./ctl.sh start -D FP_HeaderOrder 1>/dev/null
 _REQ server1 $PORT_BASE
 __GET /index.html HTTP/1.1
 __User-Agent: Mozilla 1.0
-__Host: server1:$PORT_BASE4
+__Host: server1:$PORT_BASE
 __
 _WAIT
 _CLOSE
@@ -21,8 +21,27 @@ _EXPECT EXEC "hdr=1;0; id="
 _EXEC tail -1 logs/access_log
 
 _REQ server1 $PORT_BASE
+__GET /index.html HTTP/1.0
+__
+_WAIT
+_CLOSE
+_SLEEP 100
+_EXPECT EXEC "hdr= id="
+_EXEC tail -1 logs/access_log
+
+_REQ server1 $PORT_BASE
+__GET /index.html HTTP/1.0
+__Host: server1:$PORT_BASE
+__
+_WAIT
+_CLOSE
+_SLEEP 100
+_EXPECT EXEC "hdr=0; id="
+_EXEC tail -1 logs/access_log
+
+_REQ server1 $PORT_BASE
 __GET /index.html HTTP/1.1
-__Host: server1:$PORT_BASE4
+__Host: server1:$PORT_BASE
 __User-Agent: Mozilla 1.0
 __
 _WAIT
@@ -33,7 +52,7 @@ _EXEC tail -1 logs/access_log
 
 _REQ server1 $PORT_BASE
 __GET /index.html HTTP/1.1
-__Host: server1:$PORT_BASE4
+__Host: server1:$PORT_BASE
 __User-Agent: Mozilla 1.0
 __Accept-Encoding: gzip, deflate
 __
@@ -45,7 +64,7 @@ _EXEC tail -1 logs/access_log
 
 _REQ server1 $PORT_BASE
 __GET /index.html HTTP/1.1
-__Host: server1:$PORT_BASE4
+__Host: server1:$PORT_BASE
 __User-Agent: Mozilla 1.0
 __Other-Header: 1
 __A-Other-Header: 2
@@ -98,7 +117,7 @@ __Z-Other-Header-merge: 1
 __Z-Other-Header-merge: 2
 __A-Other-Header-N10: 1
 __A-Other-Header-N11: 1
-__Host: server1:$PORT_BASE4
+__Host: server1:$PORT_BASE
 __
 _WAIT
 _CLOSE
