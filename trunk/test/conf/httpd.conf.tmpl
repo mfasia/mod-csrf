@@ -2,7 +2,7 @@
 # mod_csrf - Cross-site request forgery protection module
 #            for the Apache web server
 #
-# Copyright (C) 2012-2014 Christoph Steigmeier, Pascal Buchbinder
+# Copyright (C) 2012-2015 Christoph Steigmeier, Pascal Buchbinder
 # 
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -53,7 +53,7 @@ DefaultType             text/plain
 AddType                 text/html .shtml
 AddOutputFilter         INCLUDES .shtml
 
-LogFormat               "%h %l %u %t \"%r\" %>s %{content-length}i %b \"%{User-Agent}i\" \"%{Referer}i\" %T id=%{UNIQUE_ID}e %{CSRF_ATTRIBUTE}e %{csrfpId}i %{CLID_REC}e #%P"
+LogFormat               "%h %l %u %t \"%r\" %>s %{content-length}i %b \"%{User-Agent}i\" \"%{Referer}i\" %T hdr=%{FP_HeaderOrder}e id=%{UNIQUE_ID}e %{CSRF_ATTRIBUTE}e %{csrfpId}i %{CLID_REC}e #%P"
 
 LogLevel                warn
 ErrorLog                ##ROOT##/logs/error_log
@@ -73,6 +73,7 @@ LoadModule              info_module ##ROOT##/../httpd/modules/generators/.libs/m
 LoadModule              unique_id_module ##ROOT##/../httpd/modules/metadata/.libs/mod_unique_id.so
 LoadModule              proxy_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy.so
 LoadModule              proxy_http_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy_http.so
+LoadModule              fp_module ##ROOT##/../httpd/modules/fp/.libs/mod_fp.so
 LoadModule              csrf_module ##ROOT##/../httpd/modules/csrf/.libs/mod_csrf.so
 LoadModule              clientid_module ##ROOT##/../httpd/modules/clientid/.libs/mod_clientid.so
 LoadModule              rewrite_module ##ROOT##/../httpd/modules/mappers/.libs/mod_rewrite.so
@@ -85,6 +86,10 @@ CLID_SemFile logs/sem
 
 <IfDefine pds>
 CLID_StorePath logs/pds
+</IfDefine>
+
+<IfDefine FP_HeaderOrder>
+FP_HeaderOrder Host User-Agent Accept-Encoding
 </IfDefine>
 
 Listen                  127.0.0.1:##PORT_BASE##

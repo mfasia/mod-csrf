@@ -1,0 +1,38 @@
+#
+# FP_HeaderOrder Host User-Agent Accept-Encoding
+#
+
+INCLUDE scripts/ports
+
+CLIENT
+
+_EXEC ./ctl.sh stop 1>/dev/null
+_EXEC ./ctl.sh start -D FP_HeaderOrder 1>/dev/null
+
+_REQ server1 $PORT_BASE
+__GET /index.html HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Host: server1:$PORT_BASE4
+__
+_WAIT
+_CLOSE
+_SLEEP 100
+_EXPECT EXEC "hdr=1;0; id="
+_EXEC tail -1 logs/access_log
+
+_REQ server1 $PORT_BASE
+__GET /index.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__
+_WAIT
+_CLOSE
+_SLEEP 100
+_EXPECT EXEC "hdr=0;1; id="
+_EXEC tail -1 logs/access_log
+
+
+
+_EXEC ./ctl.sh restart 1>/dev/null
+
+END
