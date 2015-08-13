@@ -1,0 +1,155 @@
+INCLUDE scripts/ports
+
+GLOBAL GLOBALCOOKIE
+GLOBAL GLOBALETAG
+
+#EXEC ./ctl.sh restart -D fp 1>/dev/null 2>/dev/null
+
+CLIENT
+
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Host: server1:$PORT_BASE4
+__Req: 1.01
+__
+_EXPECT . "!start page 3"
+_EXPECT . "!200 OK"
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
+_EXPECT . "Location.*cookie.html"
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" GLOBALCOOKIE
+_WAIT
+_CLOSE
+
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$GLOBALCOOKIE
+__Req: 1.02
+__
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
+_EXPECT . "Set-Cookie"
+_EXPECT . "Location.*/check"
+_MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_WAIT
+_CLOSE
+
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$GLOBALCOOKIE; clidchk=$COOKIE2
+__Req: 1.03
+__
+_EXPECT . "(307 Temporary Redirect)|(302 Found)"
+_EXPECT . "!Set-Cookie"
+_EXPECT . "Location.*/index"
+_MATCH headers "Location: https://server1:${PORT_BASE4}(.*)" LOCATION
+_MATCH headers "ETag: (.*)" GLOBALETAG
+_WAIT
+_CLOSE
+
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$GLOBALCOOKIE
+__Req: 1.04
+__
+_EXPECT . "page 3"
+_WAIT
+_CLOSE
+_SLEEP 500
+
+# SYNC 1 #######################
+# change FP
+_REQ server1 SSL:$PORT_BASE4
+__GET $LOCATION HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 CHANGED
+__Cookie: clid=$GLOBALCOOKIE
+__Req: 1.05
+__
+_EXPECT . "!page 3"
+_MATCH headers "Set-Cookie: clidchk=(.*); Max-Age" COOKIE2
+_WAIT
+_CLOSE
+
+_SLEEP 13000
+# SYNC 2 #######################
+_REQ server1 SSL:$PORT_BASE4
+__GET /error/check.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 CHANGED
+__Cookie: clid=$GLOBALCOOKIE; clidchk=$COOKIE2
+__If-None-Match: $GLOBALETAG
+__Req: 1.06
+__
+_EXPECT . "!page 3"
+_EXPECT . "Location:.*index3.html"
+_MATCH headers "Set-Cookie: clid=(.*); httpOnly" GLOBALCOOKIE
+_WAIT
+_CLOSE
+
+END
+
+CLIENT
+
+_SLEEP 300
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$GLOBALCOOKIE
+__Req: 2.01
+__
+_EXPECT . "page 3"
+_WAIT
+_CLOSE
+_SLEEP 300
+
+# SYNC 1 #######################
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Cookie: clid=$GLOBALCOOKIE
+__Req: 2.02
+__
+_EXPECT . "page 3"
+_WAIT
+_CLOSE
+
+# waiting for unlock...
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 CHANGED
+__Cookie: clid=$GLOBALCOOKIE
+__Req: 2.03
+__
+_EXPECT . "!page 3"
+_EXPECT . "Location: .*/error/check.html"
+_WAIT
+_CLOSE
+
+# SYNC 2 #######################
+# waiting for unlock... this time, the other client unlocks 
+# the session and this client shall reload the page
+_REQ server1 SSL:$PORT_BASE4
+__GET /index3.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0 CHANGED
+__Cookie: clid=$GLOBALCOOKIE
+__Req: 2.04
+__
+_EXPECT . "!page 3"
+_EXPECT . "307 Temp"
+_EXPECT . "Location: .*/index3.html"
+_WAIT
+_CLOSE
+
+END

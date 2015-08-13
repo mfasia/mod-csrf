@@ -1,0 +1,302 @@
+#
+# mod_csrf - Cross-site request forgery protection module
+#            for the Apache web server
+#
+# Copyright (C) 2012-2015 Christoph Steigmeier, Pascal Buchbinder
+# 
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+# 
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+# 
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+
+ServerName              127.0.0.1
+StartServers            1
+ServerLimit             1
+MinSpareThreads         5
+MaxSpareThreads         16
+ThreadsPerChild         16
+MaxClients              16
+MaxRequestsPerChild     0
+
+User                    ##USR##
+Group                   users
+ServerAdmin             webmaster@127.0.0.1
+ServerRoot              ##ROOT##
+DocumentRoot            ##ROOT##/htdocs/
+ServerSignature         off
+HostnameLookups         off
+UseCanonicalName        on
+<IfDefine !apache24>
+LockFile                ##ROOT##/logs/accept.lock
+</IfDefine>
+Timeout                 30
+KeepAlive               on
+MaxKeepAliveRequests    100
+KeepAliveTimeout        5
+
+LimitRequestFields      30
+LimitRequestLine        7168
+
+Options                 FollowSymLinks Indexes Includes
+DefaultType             text/plain
+AddType                 text/html .shtml
+AddOutputFilter         INCLUDES .shtml
+
+LogFormat               "%h %l %u %t \"%r\" %>s %{content-length}i %b \"%{User-Agent}i\" \"%{Referer}i\" %T hdr=%{FP_HeaderOrder}e id=%{UNIQUE_ID}e %{CSRF_ATTRIBUTE}e %{csrfpId}i %{CLID_REC}e #%P"
+
+LogLevel                warn
+ErrorLog                ##ROOT##/logs/error_log
+PidFile                 ##ROOT##/logs/apache.pid
+CoreDumpDirectory       ##ROOT##/logs/
+
+<IfDefine !apache24>
+SSLSessionCache         shm:##ROOT##/logs/ssl_scache(1048576)
+SSLMutex                file:##ROOT##/logs/ssl_mutex
+SSLRandomSeed           startup builtin
+</IfDefine>
+
+TypesConfig             ../test/conf/mime.types
+<IfDefine !apache24>
+LoadModule              status_module ##ROOT##/../httpd/modules/generators/.libs/mod_status.so
+LoadModule              info_module ##ROOT##/../httpd/modules/generators/.libs/mod_info.so
+LoadModule              unique_id_module ##ROOT##/../httpd/modules/metadata/.libs/mod_unique_id.so
+LoadModule              proxy_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy.so
+LoadModule              proxy_http_module ##ROOT##/../httpd/modules/proxy/.libs/mod_proxy_http.so
+LoadModule              fp_module ##ROOT##/../httpd/modules/fp/.libs/mod_fp.so
+LoadModule              csrf_module ##ROOT##/../httpd/modules/csrf/.libs/mod_csrf.so
+LoadModule              clientid_module ##ROOT##/../httpd/modules/clientid/.libs/mod_clientid.so
+LoadModule              rewrite_module ##ROOT##/../httpd/modules/mappers/.libs/mod_rewrite.so
+LoadModule              setenvifplus_module ##ROOT##/../test/libexec/mod_setenvifplus.so
+LoadModule              parp_module ##ROOT##/../test/libexec/mod_parp.so
+LoadModule              qos_module ##ROOT##/../test/libexec/mod_qos.so
+</IfDefine>
+
+CLID_SemFile logs/sem
+
+<IfDefine pds>
+CLID_StorePath logs/pds
+</IfDefine>
+
+<IfDefine FP_HeaderOrder>
+FP_HeaderOrder Host User-Agent Accept-Encoding
+</IfDefine>
+
+Listen                  127.0.0.1:##PORT_BASE##
+<VirtualHost 127.0.0.1:##PORT_BASE##>
+   ServerName             127.0.0.1
+   TransferLog            ##ROOT##/logs/access_log
+
+   <IfDefine logonly>
+   CSRF_Action            log
+   </IfDefine>
+   CSRF_Passphrase        HN_gVo6FXFj0
+   ErrorDocument          403 /error/403.html
+   <IfDefine timeout>
+   CSRF_Timeout           3
+   </IfDefine>
+
+   <Location /status>
+      SetHandler server-status
+   </Location>
+
+   <Location /info>
+      SetHandler server-info
+   </Location>
+
+   Redirect               /nzz http://127.0.0.1:##PORT_BASE2##/
+   Redirect               /20 http://127.0.0.1:##PORT_BASE3##/
+
+   ProxyRequests          Off
+   ProxyPass              /htt http://localhost:##PORT_BASE1##/htt retry=0
+   ProxyPassReverse       /htt http://localhost:##PORT_BASE1##/htt
+   <Proxy *>
+      Order deny,allow
+      Allow from all
+   </Proxy>
+
+   #CSRF_Enable off
+   RewriteEngine on
+   # redirect every 5th request to the login page
+<IfDefine !apache24>
+   SetEnvIfPlus Request_Query counter=.*5.*  SESSION_EXPIRATION=yes
+</IfDefine>
+   RewriteCond %{ENV:SESSION_EXPIRATION} ^yes
+   RewriteRule ^/(.*)$ http://127.0.0.1:##PORT_BASE##/login.html?login [L,R]
+   # indicate login page access by setting the "X-LoginPage" header
+<IfDefine !apache24>
+   SetEnvIfPlus Request_Query .*login.* LOGINPAGE=yes
+   ResponseHeaderPlus set X-LoginPage login env=LOGINPAGE
+   ResponseHeaderPlus set Access-Control-Allow-Origin http://127.0.0.1:##PORT_BASE## env=LOGINPAGE
+   ResponseHeaderPlus set Access-Control-Expose-Headers X-LoginPage env=LOGINPAGE
+</IfDefine>
+
+   # set a user tracking cookie which shall be part of the csrf id
+<IfDefine !apache24>
+   QS_SessionKey                        1234567890abcdef
+   QS_UserTrackingCookieName            csrfuid
+</IfDefine>
+   <Location />
+<IfDefine !apache24>
+      SetEnvIf     Host (.*):[0-9]+     CSRF_ATTRIBUTE=$1
+      SetEnvIf     mod_qos_user_id (.*) CSRF_ATTRIBUTE=${CSRF_ATTRIBUTE}:$1
+      ResponseSetEnvIfPlus Location 127.0.0.1 CSRF_REDIRECT
+</IfDefine>
+   </Location>
+
+   <Location /htt/off>
+      CSRF_Enable                       off
+   </Location>
+
+</VirtualHost>
+
+Listen                  127.0.0.1:##PORT_BASE2##
+<VirtualHost 127.0.0.1:##PORT_BASE2##>
+   ServerName             www.nzz.ch
+   TransferLog            ##ROOT##/logs/access_log
+
+   ProxyRequests          Off
+   ProxyPass              /csrf.js !
+   ProxyPass              / http://www.nzz.ch/ retry=0
+   ProxyPassReverse       / http://www.nzz.ch/
+<IfDefine !apache24>
+   ChangeResponseHeaderPlus Location ^http://www.nzz.ch/(.*) http://127.0.0.1:##PORT_BASE2##/$1
+</IfDefine>
+   CSRF_Passphrase        HN_gVo6FXFj0
+
+   # set a user tracking cookie which shall be part of the csrf id
+<IfDefine !apache24>
+   QS_SessionKey                        1234567890abcdef
+   QS_UserTrackingCookieName            csrfuid
+</IfDefine>
+   <Location />
+<IfDefine !apache24>
+      SetEnvIfPlus Host (.*):[0-9]+     CSRF_ATTRIBUTE=$1
+      SetEnvIfPlus mod_qos_user_id (.*) CSRF_ATTRIBUTE=${CSRF_ATTRIBUTE}:$1
+
+      RequestHeaderRemovePattern Accept-Encoding "(x-gzip|x-compress|x-deflate)[,; ]*"
+      RequestHeaderRemovePattern Accept-Encoding "(gzip|compress|deflate)[,; ]*"
+</IfDefine>
+   </Location>
+</VirtualHost>
+
+Listen                  127.0.0.1:##PORT_BASE3##
+<VirtualHost 127.0.0.1:##PORT_BASE3##>
+   ServerName             www.20min.ch
+   TransferLog            ##ROOT##/logs/access_log
+
+   SSLProxyEngine         on
+   SSLProxyCACertificateFile ##ROOT##/conf/cacert.pem
+
+   ProxyRequests          Off
+   ProxyPass              /csrf.js !
+   ProxyPass              / http://www.20min.ch/ retry=0
+   ProxyPassReverse       / http://www.20min.ch/
+<IfDefine !apache24>
+   ChangeResponseHeaderPlus Location ^http://www.20min.ch/(.*) http://127.0.0.1:##PORT_BASE3##/$1
+</IfDefine>
+   CSRF_Passphrase        HN_gVo6FXFj0
+
+   SetEnvIf Request_URI   /2010/CSS/.*  CSRF_IGNORE=yes
+   SetEnvIf Request_URI   /2010/JS/.*  CSRF_IGNORE=yes
+
+   # set a user tracking cookie which shall be part of the csrf id
+<IfDefine !apache24>
+   QS_SessionKey                        1234567890abcdef
+   QS_UserTrackingCookieName            csrfuid
+</IfDefine>
+   <Location />
+<IfDefine !apache24>
+      SetEnvIfPlus Host (.*):[0-9]+     CSRF_ATTRIBUTE=$1
+      SetEnvIfPlus mod_qos_user_id (.*) CSRF_ATTRIBUTE=${CSRF_ATTRIBUTE}:$1
+
+      RequestHeaderRemovePattern Accept-Encoding "(x-gzip|x-compress|x-deflate)[,; ]*"
+      RequestHeaderRemovePattern Accept-Encoding "(gzip|compress|deflate)[,; ]*"
+</IfDefine>
+   </Location>
+</VirtualHost>
+
+#----------------------------------------------------------------------
+#
+# mod_clientid - Per client session identifier module
+#                for the Apache web server.
+#
+Listen                  127.0.0.1:##PORT_BASE4##
+<VirtualHost 127.0.0.1:##PORT_BASE4##>
+   ServerName               server1
+   TransferLog              ##ROOT##/logs/access_log
+
+   SSLEngine                on
+   SSLCertificateKeyFile    ssl/server1.key.pem
+   SSLCertificateFile       ssl/server1.cert.pem
+   SSLCertificateChainFile  ssl/cacert.pem
+   SSLVerifyDepth           3
+
+   PARP_BodyData            */*
+
+   CSRF_Enable              off
+
+   # redirect to "real" server ServerName (to ensure the browser
+   # returns the cookie when redirected)
+   RewriteEngine on
+   RewriteCond %{HTTP:Host} !server1
+   RewriteRule ^/(.*)$ https://%{SERVER_NAME}:##PORT_BASE4##/$1 [L,R]
+
+   # redirect test
+   RewriteRule ^/rewrite0$ https://%{SERVER_NAME}:##PORT_BASE4##/rewrite1 [L,R]
+   RewriteRule ^/rewrite1$ https://%{SERVER_NAME}:##PORT_BASE4##/error/check.html [L,R]
+
+   CLID_Cookie              123456 clid /cookie.html
+<IfDefine !fp>
+   CLID_Require             SSL Fingerprint
+</IfDefine>
+<IfDefine fp>
+   CLID_Require             Fingerprint
+</IfDefine>
+   CLID_Check               /error/check.html
+
+<IfDefine customfp>
+   CLID_Fingerprint         Accept-Language  Accept-Encoding
+</IfDefine>
+
+<IfDefine mxc3>
+   CLID_MaxCheck            3
+</IfDefine>
+
+#<IfDefine !apache24>
+#    SetEnvIfPlus            Request_URI /update.txt NoCache
+#    ResponseHeaderPlus      set Cache-Control "no-cache, no-store" env=NoCache
+#</IfDefine>
+
+<IfDefine !apache24>
+   SetEnvIfPlus             CLID_RND (.*) SP_COOKIE_KEY=$1
+   CookieEncPlus            JSESSIONID
+</IfDefine>
+
+   ProxyRequests            Off
+   ProxyPass                /htt http://localhost:##PORT_BASE1##/htt retry=0
+   ProxyPassReverse         /htt http://localhost:##PORT_BASE1##/htt
+   <Proxy *>
+      Order deny,allow
+      Allow from all
+   </Proxy>
+
+   <Location /welcome.html>
+      CLID_Enable           off
+   </Location>
+
+   <LocationMatch .*\.jpg$>
+      CLID_Enable           off
+   </LocationMatch>
+
+</VirtualHost>
