@@ -2,8 +2,7 @@
  */
 
 /**
- * mod_fp - Module to gather data aboute the browser (fingerprint)
- *          for the Apache web server.
+ * mod_fp - Module to gather "data about the browser" (fingerprint)
  *
  * See also http://sourceforge.net/projects/mod-csrf/
  *
@@ -53,6 +52,7 @@ static const char g_revision[] = "0.0";
  * defines
  ***********************************************************************/
 #define CLID_LOG_PFX(id)  "mod_fp("#id"): "
+#define FP_HDRORDER       "FP_HeaderOrder"
 
 // Apache 2.4 compat
 #if (AP_SERVER_MINORVERSION_NUMBER == 4)
@@ -77,7 +77,6 @@ typedef struct {
  * globals
  ***********************************************************************/
 module AP_MODULE_DECLARE_DATA fp_module;
-#define FP_ICASE_MAGIC  ((void *)(&fp_module))
 
 /************************************************************************
  * private
@@ -91,6 +90,18 @@ static int fp_post_read_request(request_rec *r) {
   if(ap_is_initial_req(r)) {
     fp_srv_config_t *conf = ap_get_module_config(r->server->module_config, 
                                              &fp_module);
+    if(conf->headers) {
+      int i;
+      char *id = "";
+      apr_table_entry_t *entry = (apr_table_entry_t *)apr_table_elts(r->headers_in)->elts;
+      for(i = 0; i < apr_table_elts(r->headers_in)->nelts; i++) {
+        const char *hdrId = apr_table_get(conf->headers, entry[i].key);
+        if(hdrId != NULL) {
+          id = apr_pstrcat(r->pool, id, hdrId, NULL);
+        }
+      }
+      apr_table_set(r->subprocess_env, FP_HDRORDER, id);
+    }
   }
   return DECLINED;
 }
@@ -130,6 +141,7 @@ static void *fp_dir_config_merge(apr_pool_t *p, void *basev, void *addv) {
 
 static void *fp_srv_config_create(apr_pool_t *p, server_rec *s) {
   fp_srv_config_t *sconf = apr_pcalloc(p, sizeof(fp_srv_config_t));
+  sconf->headers = NULL;
   return sconf;
 }
 
@@ -147,19 +159,15 @@ static void *fp_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
 
 const char *fp_headers_cmd(cmd_parms *cmd, void *dcfg, const char *header) {
   fp_srv_config_t *conf = ap_get_module_config(cmd->server->module_config, &fp_module);
-  const char *err = ap_check_cmd_context(cmd, GLOBAL_ONLY);
-  if (err != NULL) {
-    return err;
-  }
   if(conf->headers == NULL) {
     conf->headers = apr_table_make(cmd->pool, 10);
   }
-  apr_table_add(conf->headers, header, apr_psprintf(cmd->pool, "%d-", apr_table_elts(conf->headers)->nelts));
+  apr_table_add(conf->headers, header, apr_psprintf(cmd->pool, "%d;", apr_table_elts(conf->headers)->nelts));
   return NULL;
 }
 
 static const command_rec fp_config_cmds[] = {
-  AP_INIT_ITERATE("FP_HederOrder", fp_headers_cmd, NULL,
+  AP_INIT_ITERATE("FP_HeaderOrder", fp_headers_cmd, NULL,
                   RSRC_CONF,
                   ""),
   { NULL }
@@ -170,7 +178,7 @@ static const command_rec fp_config_cmds[] = {
  ***********************************************************************/
 static void fp_register_hooks(apr_pool_t * p) {
   static const char *pre[] = { "mod_ssl.c", NULL };
-  static const char *post[] = { "mod_setenvifplus.c", "mod_parp.c", NULL };
+  static const char *post[] = { "mod_clientid.c", "mod_setenvifplus.c", "mod_parp.c", NULL };
   ap_hook_post_read_request(fp_post_read_request, pre, post, APR_HOOK_MIDDLE);
   //ap_hook_post_config(fp_post_config, pre, NULL, APR_HOOK_MIDDLE);
 }
