@@ -31,8 +31,83 @@ _SLEEP 100
 _EXPECT EXEC "hdr=0;1; id="
 _EXEC tail -1 logs/access_log
 
+_REQ server1 $PORT_BASE
+__GET /index.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Accept-Encoding: gzip, deflate
+__
+_WAIT
+_CLOSE
+_SLEEP 100
+_EXPECT EXEC "hdr=0;1;2; id="
+_EXEC tail -1 logs/access_log
 
+_REQ server1 $PORT_BASE
+__GET /index.html HTTP/1.1
+__Host: server1:$PORT_BASE4
+__User-Agent: Mozilla 1.0
+__Other-Header: 1
+__A-Other-Header: 2
+__Accept-Encoding: gzip, deflate
+__X-Other-Header: 3
+__Z-Other-Header: 4
+__A-Other-Header-N01: 1
+__A-Other-Header-N02: 1
+__C-Other-Header-N03: 1
+__A-Other-Header-N04: 1
+__B-Other-Header-N05: 1
+__A-Other-Header-N06: 1
+__A-Other-Header-N07: 1
+__A-Other-Header-N08: 1
+__A-Other-Header-N09: 1
+__A-Other-Header-N10: 1
+__A-Other-Header-N11: 1
+__
+_WAIT
+_CLOSE
+_SLEEP 100
+_EXPECT EXEC "hdr=0;1;2; id="
+_EXEC tail -1 logs/access_log
 
+_REQ server1 $PORT_BASE
+__GET /index.html HTTP/1.1
+__User-Agent: Mozilla 1.0
+__Other-Header: 1
+__A-Other-Header: 2
+__Accept-Encoding: gzip, deflate
+__X-Other-Header: 3
+__Z-Other-Header: 4
+__A-Other-Header-N01: 1
+__A-Other-Header-N02: 1
+__C-Other-Header-N03: 1
+__A-Other-Header-N04: 1
+__B-Other-Header-N05: 1
+__A-Other-Header-N06: 1
+__A-Other-Header-N07: 1
+__A-Other-Header-N08: 1
+__A-Other-Header-N09: 1
+__Z-Other-Header-M01: 1
+__Z-Other-Header-M02: 1
+__Z-Other-Header-M03: 1
+__Z-Other-Header-M04: 1
+__Z-Other-Header-M05: 1
+__Z-Other-Header-M06: 1
+__Z-Other-Header-M07: 1
+__Z-Other-Header-merge: 1
+__Z-Other-Header-merge: 2
+__A-Other-Header-N10: 1
+__A-Other-Header-N11: 1
+__Host: server1:$PORT_BASE4
+__
+_WAIT
+_CLOSE
+_SLEEP 100
+_EXPECT EXEC "hdr=1;2;0; id="
+_EXEC tail -1 logs/access_log
+
+END
+
+BLOCK FINALLY
 _EXEC ./ctl.sh restart 1>/dev/null
-
 END
