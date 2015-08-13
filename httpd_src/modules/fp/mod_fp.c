@@ -26,7 +26,7 @@
 /************************************************************************
  * Version
  ***********************************************************************/
-static const char g_revision[] = "0.0";
+static const char g_revision[] = "0.1";
 
 /************************************************************************
  * Includes
@@ -106,21 +106,25 @@ static int fp_post_read_request(request_rec *r) {
   return DECLINED;
 }
 
-/*
+
 static int fp_post_config(apr_pool_t *pconf, apr_pool_t *plog, 
                             apr_pool_t *ptemp, server_rec *bs) {
+  /*
   server_rec *s = bs;
   fp_srv_config_t *conf = ap_get_module_config(bs->module_config, 
                                              &fp_module);
+  */
   ap_add_version_component(pconf, apr_psprintf(pconf, "mod_fp/%s", 
                                                g_revision));
+  /*
   while(s) {
     conf = ap_get_module_config(s->module_config, &fp_module);
     s = s->next;
   }
+  */
   return DECLINED;
 }
-*/
+
 
 /************************************************************************
  * directiv handlers 
@@ -169,7 +173,9 @@ const char *fp_headers_cmd(cmd_parms *cmd, void *dcfg, const char *header) {
 static const command_rec fp_config_cmds[] = {
   AP_INIT_ITERATE("FP_HeaderOrder", fp_headers_cmd, NULL,
                   RSRC_CONF,
-                  ""),
+                  "FP_HeaderOrder <header names>, generates the 'FP_HeaderOrder'"
+                  " variable which shows in which sequence the defined HTTP"
+                  " request header fields has been send by the client."),
   { NULL }
 };
 
@@ -180,7 +186,7 @@ static void fp_register_hooks(apr_pool_t * p) {
   static const char *pre[] = { "mod_ssl.c", NULL };
   static const char *post[] = { "mod_clientid.c", "mod_setenvifplus.c", "mod_parp.c", NULL };
   ap_hook_post_read_request(fp_post_read_request, pre, post, APR_HOOK_MIDDLE);
-  //ap_hook_post_config(fp_post_config, pre, NULL, APR_HOOK_MIDDLE);
+  ap_hook_post_config(fp_post_config, pre, NULL, APR_HOOK_MIDDLE);
 }
 
 /************************************************************************
