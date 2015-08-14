@@ -59,7 +59,7 @@ __
 _WAIT
 _CLOSE
 _SLEEP 100
-_EXPECT EXEC "hdr=0;1;2; id="
+_EXPECT EXEC "hdr=0;1;4; id="
 _EXEC tail -1 logs/access_log
 
 _REQ server1 $PORT_BASE
@@ -86,7 +86,7 @@ __
 _WAIT
 _CLOSE
 _SLEEP 100
-_EXPECT EXEC "hdr=0;1;2; id="
+_EXPECT EXEC "hdr=0;1;4; id="
 _EXEC tail -1 logs/access_log
 
 _REQ server1 $PORT_BASE
@@ -122,7 +122,7 @@ __
 _WAIT
 _CLOSE
 _SLEEP 100
-_EXPECT EXEC "hdr=1;2;0; id="
+_EXPECT EXEC "hdr=1;4;0; id="
 _EXEC tail -1 logs/access_log
 
 END
