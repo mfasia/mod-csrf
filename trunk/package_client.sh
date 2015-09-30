@@ -45,6 +45,8 @@ cp doc/LICENSE.txt mod_clientid-${VERSION}/doc/
 cp doc/clientid.html mod_clientid-${VERSION}/doc/index.html
 cp doc/clientid.png mod_clientid-${VERSION}/doc/
 cp doc/clientid_seq.png mod_clientid-${VERSION}/doc/
+cp doc/clchk.txt mod_clientid-${VERSION}/doc/
+cp doc/cookie.txt mod_clientid-${VERSION}/doc/
 mkdir -p mod_clientid-${VERSION}/doc/htdocs/res/
 cp test/htdocs/error/check.html mod_clientid-${VERSION}/doc/htdocs/res/clchk.html
 cp test/htdocs/cookie.html mod_clientid-${VERSION}/doc/htdocs/res/
