@@ -24,7 +24,7 @@
 ```
 
 ## How to insert CSRF token in XML response
-### In any XML document add an empty tag ```</csrf_token>``` then the module will fill in this tag with CSRF token
+### In any XML document add an empty tag ```<csrf_token></csrf_token>``` then the module will fill in this tag with CSRF token
 
 ## Example Apache configuration (/etc/httpd/conf.modules.d/11-csrf.conf)
 ```xml
