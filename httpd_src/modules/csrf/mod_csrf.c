@@ -27,6 +27,8 @@
  ***********************************************************************/
 static const char g_revision[] = "0.5";
 
+
+#define MYLOG(x) ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r, x);
 /************************************************************************
  * Includes
  ***********************************************************************/
@@ -65,15 +67,20 @@ static const char g_revision[] = "0.5";
 #define CSRF_LOG_PFX(id)  "mod_csrf("#id"): "
 #define CSRF_LOGD_PFX  "mod_csrf(): "
 
-#define CSRF_IGNORE_PATTERN ".*(jpg)|(jpeg)|(gif)|(png)|(js)|(css)$"
+#define CSRF_IGNORE_PATTERN ".*(jpg)|(jpeg)|(gif)|(png)|(js)|(css)|(html)$"
 #define CSRF_IGNORE_CACHE "mod_csrf::ignore"
 #define CSRF_IGNORE "CSRF_IGNORE"
+
+#define CSRF_IGNORE_VALIDATION_PATTERN ".*(jpg)|(jpeg)|(gif)|(png)|(js)|(css)|(html)$"
+#define CSRF_IGNORE_VALIDATION_CACHE "mod_csrf::ignore_validate"
+#define CSRF_IGNORE_VALIDATION "CSRF_IGNORE_VALIDATION"
+
 #define CSRF_REDIRECT "CSRF_REDIRECT"
 
 #define CSRF_QUERYID "csrfpId"
 #define CSRF_WIN 8
-#define CSRF_ENABLE_WINDOW 1
-#define CSRF_CHUNKED_ONLY 1
+#define CSRF_ENABLE_WINDOW 0
+#define CSRF_CHUNKED_ONLY 0
 /* div */
 #define CSRF_RAND_SIZE 10
 #define CSRF_IDDELIM "#"
@@ -82,6 +89,9 @@ static const char g_revision[] = "0.5";
 
 // env variable to read id from
 #define CSRF_ATTRIBUTE "CSRF_ATTRIBUTE"
+
+// CSRF token tag in XML
+#define CSRF_TOKEN_TAG "</csrf_token>"
 
 // Apache 2.4 compat
 #if (AP_SERVER_MINORVERSION_NUMBER == 4)
@@ -109,6 +119,7 @@ typedef enum  {
 typedef struct {
   int flags;
   ap_regex_t *ignore_pattern; /** path pattern which disables request check */
+  ap_regex_t *ignore_validation_pattern; /** path pattern which enables validation */
   int enabled;                /** enabled by default (-1) or by user (1) */
   csrf_action_e action;
   const char *id;
@@ -131,8 +142,15 @@ typedef enum  {
   CSRF_RES_NEW = 0,
   CSRF_RES_SEARCH_HEAD,
   CSRF_RES_SEARCH_BODY,
+  CSRF_RES_SEARCH_TOKEN,
   CSRF_RES_SEARCH_END
 } csrf_conn_state_e;
+
+typedef enum {
+  CSRF_TYPE_OTHER = 'O',
+  CSRF_TYPE_HTML = 'H',
+  CSRF_TYPE_XML = 'X'
+} csrf_type_e;
 
 typedef struct {
   csrf_conn_state_e state;
@@ -140,7 +158,11 @@ typedef struct {
   char *body_window;
   char *script; // meta loading the script
   char *method; // javascript code calling the inject method
+  char *token; // csrf token inside the csrf_token tag
   apr_pool_t *pool;
+  csrf_type_e type;
+  int done;
+  int len;
 } csrf_req_ctx;
 
 /************************************************************************
@@ -201,14 +223,14 @@ static int csrf_token64_encode_binary(char *encoded,
     *p++ = csrf_basis_64[(string[i] >> 2) & 0x3F];
     if (i == (len - 1)) {
       *p++ = csrf_basis_64[((string[i] & 0x3) << 4)];
-      *p++ = '=';
+      /**p++ = '=';*/
     }
     else {
       *p++ = csrf_basis_64[((string[i] & 0x3) << 4) |
                       ((int) (string[i + 1] & 0xF0) >> 4)];
       *p++ = csrf_basis_64[((string[i + 1] & 0xF) << 2)];
     }
-    *p++ = '=';
+    /**p++ = '=';*/
   }
   
   *p++ = '\0';
@@ -413,6 +435,43 @@ static int csrf_ignore_req(request_rec *r) {
 }
 
 /**
+ * We don't validate some types of requests
+ *
+ * @param r
+ * @return 1 if we don't validate this request, 0 if we do
+ */
+static int csrf_ignore_validation(request_rec *r) {
+  csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
+  
+  if(apr_table_get(r->notes, CSRF_IGNORE_VALIDATION_CACHE)) {
+    // cache: check regex only once
+    return 1;
+  }
+  if(apr_table_get(r->subprocess_env, CSRF_IGNORE_VALIDATION)) {
+    // ignore by env variable
+    ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
+                  CSRF_LOGD_PFX"ignore validation by '"CSRF_IGNORE_VALIDATION"' env variable, id=%s",
+                  csrf_get_uniqueid(r));
+    return 1;
+  }
+  if(r->parsed_uri.path) {
+    const char *path = strrchr(r->parsed_uri.path, '/'); // faster than match against a long string
+    if(path == NULL) {
+      path = r->parsed_uri.path;
+    }
+    if(ap_regexec(sconf->ignore_validation_pattern, path, 0, NULL, 0) == 0) {
+      apr_table_set(r->notes, CSRF_IGNORE_VALIDATION_CACHE, "i");
+      ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
+                    CSRF_LOGD_PFX"ignore validation '%s' by pattern, id=%s",
+                    r->parsed_uri.path, csrf_get_uniqueid(r));
+      return 1;
+    }
+  }
+  return 0;
+}
+
+
+/**
  * Returns a table containing the query name/value pairs.
  *
  * @param r
@@ -503,11 +562,11 @@ static char *csrf_enc64(request_rec *r, const char *str) {
                         (const unsigned char *)str, strlen(str))) {
     goto failed;
   }
-  buf_len+=len;
+  buf_len += len;
   if(!EVP_EncryptFinal(&cipher_ctx, &buf[buf_len], &len)) {
     goto failed;
   }
-  buf_len+=len;
+  buf_len += len;
   EVP_CIPHER_CTX_cleanup(&cipher_ctx);
   // better to use our own encoding (not base64, avoid "+", "/", and "=" chars)
   e = (char *)apr_pcalloc(r->pool, 1 + csrf_token64_encode_len(buf_len));
@@ -527,6 +586,7 @@ failed:
  */
 static char *csrf_idstr(request_rec *r) {
   const char *csrf_att = apr_table_get(r->subprocess_env, CSRF_ATTRIBUTE);
+  // TODO: remove me
   if(CSRF_ISDEBUG(r->server)) {
     ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_DEBUG, 0, r,
                   CSRF_LOGD_PFX""CSRF_ATTRIBUTE"=%s, id=%s",
@@ -552,7 +612,10 @@ static char *csrf_create_id(request_rec *r) {
                          CSRF_IDDELIM,
                          csrf_att,
                          NULL);
-  return csrf_enc64(r, id);
+
+  char *eid = csrf_enc64(r, id);
+  /*ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r, "CREATED: %s", eid);*/
+  return eid;
 }
 
 /**
@@ -685,13 +748,30 @@ static apr_bucket *csrf_inject_head(request_rec *r, apr_bucket_brigade *bb, apr_
                                     csrf_req_ctx *rctx,
                                     const char *buf, apr_size_t sz) {
   apr_bucket *e;
+  csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
+  csrf_dir_config_t *dconf = ap_get_module_config(r->per_dir_config, &csrf_module);
+
+  char time_string[32];
+  time_t tm = time(NULL);
+  struct tm *ptr = localtime(&tm);
+
+  strftime(time_string, sizeof(time_string), "%m%d", ptr); // prevent browser caching
+
+  rctx->script = apr_psprintf(r->pool, "<script language=\"JavaScript\""
+                               " src=\"%s?i=%s\" type=\"text/javascript\">"
+                                "</script>\n",
+                                dconf->path2script ? dconf->path2script : sconf->path2script,
+                                time_string);
+                                  
   apr_bucket_split(b, sz);
   b = APR_BUCKET_NEXT(b);
+  rctx->len+=strlen(rctx->script);
   e = apr_bucket_pool_create(rctx->script, strlen(rctx->script), r->pool, bb->bucket_alloc);
 
   APR_BUCKET_INSERT_BEFORE(b, e);
   rctx->state = CSRF_RES_SEARCH_BODY;
   rctx->search = apr_pstrdup(r->pool, "</body>");
+  
   return b;
 }
 
@@ -710,16 +790,45 @@ static apr_bucket *csrf_inject_body(request_rec *r, apr_bucket_brigade *bb, apr_
                                     csrf_req_ctx *rctx,
                                     const char *buf, apr_size_t sz) {
   apr_bucket *e;
+  csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
+  
+  rctx->method = apr_psprintf(r->pool, "<script type=\"text/javascript\">\n"
+                                  "<!--\ncsrfInsert(\"%s\", \"%s\");\n"
+                                  "//-->\n"
+                                  "</script>\n",
+                                  sconf->id,
+                                  csrf_create_id(r));
+  
   apr_bucket_split(b, sz);
   b = APR_BUCKET_NEXT(b);
+  rctx->len += strlen(rctx->method);
   e = apr_bucket_pool_create(rctx->method, strlen(rctx->method), r->pool, bb->bucket_alloc);
 
   APR_BUCKET_INSERT_BEFORE(b, e);
   rctx->state = CSRF_RES_SEARCH_END;
   rctx->search = NULL;
+  rctx->done = 1;
+  
   return b;
 }
 
+static apr_bucket *csrf_inject_token(request_rec *r, apr_bucket_brigade *bb, apr_bucket *b,
+                                    csrf_req_ctx *rctx,
+                                    const char *buf, apr_size_t sz) {
+  apr_bucket *e;
+  rctx->token = apr_psprintf(r->pool, "%s", csrf_create_id(r));
+  apr_bucket_split(b, sz);
+  b = APR_BUCKET_NEXT(b);
+  rctx->len += strlen(rctx->token);
+  e = apr_bucket_pool_create(rctx->token, strlen(rctx->token), r->pool, bb->bucket_alloc);
+
+  APR_BUCKET_INSERT_BEFORE(b, e);
+  rctx->state = CSRF_RES_SEARCH_END;
+  rctx->search = NULL;
+  rctx->done = 1;
+  
+  return b;
+}
 /**
  * Get or create (and init) the pre request context used by the response parser.
  *
@@ -727,35 +836,22 @@ static apr_bucket *csrf_inject_body(request_rec *r, apr_bucket_brigade *bb, apr_
  * @return
  */
 static csrf_req_ctx *csrf_get_rctx(request_rec *r) {
+  const char *type;
   csrf_req_ctx *rctx = ap_get_module_config(r->request_config, &csrf_module);
   if(rctx == NULL) {
-    csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
-    csrf_dir_config_t *dconf = ap_get_module_config(r->per_dir_config, &csrf_module);
-    char time_string[32];
-    time_t tm = time(NULL);
-    struct tm *ptr = localtime(&tm);
-
     rctx = apr_pcalloc(r->pool, sizeof(csrf_req_ctx));
     rctx->state = CSRF_RES_NEW;
     rctx->search = NULL;
     rctx->body_window = apr_pcalloc(r->pool, 2*CSRF_WIN+1);
     rctx->body_window[0] = '\0';
-
-    strftime(time_string, sizeof(time_string), "%m%d", ptr); // prevent browser caching
-
-    // TODO: better to inject the id into the js file than the html doc (better protection from
-    //       being fetched by a script), or do both (two parts)???
-    rctx->method = apr_psprintf(r->pool, "<script type=\"text/javascript\">\n"
-                                "<!--\ncsrfInsert(\"%s\", \"%s\");\n"
-                                "//-->\n"
-                                "</script>\n",
-                                sconf->id,
-                                csrf_create_id(r));
-    rctx->script = apr_psprintf(r->pool, "<script language=\"JavaScript\""
-                               " src=\"%s?i=%s\" type=\"text/javascript\">"
-                                "</script>\n",
-                                dconf->path2script ? dconf->path2script : sconf->path2script,
-                                time_string);
+    rctx->done = 0;
+    rctx->len = 0;
+    
+    type = csrf_get_contenttype(r);
+    if (type == NULL) rctx->type = CSRF_TYPE_OTHER;
+    else if (strncasecmp(type, "text/html", 9) == 0) rctx->type = CSRF_TYPE_HTML;
+    else if (strncasecmp(type, "text/xml", 8) == 0 || strncasecmp(type, "application/xml", 15) == 0) rctx->type = CSRF_TYPE_XML;
+    else rctx->type = CSRF_TYPE_OTHER;
     rctx->pool = NULL;
     ap_set_module_config(r->request_config, &csrf_module, rctx);
   }
@@ -817,8 +913,7 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
    * - end (all done)
    */
   if(rctx->state == CSRF_RES_NEW) {
-    const char *type = csrf_get_contenttype(r);
-    if(type == NULL || strncasecmp(type, "text/html", 9) != 0) {
+    if (rctx->type == CSRF_TYPE_OTHER) {
       // we don't want to parse this response (no html)
       rctx->state = CSRF_RES_SEARCH_END;
       rctx->search = NULL;
@@ -830,53 +925,21 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
                       CSRF_LOGD_PFX"enable JavaScript injection filter, id=%s",
                       csrf_get_uniqueid(r));
       }
-      if(CSRF_CHUNKED_ONLY) {
-        // send as chunked response
-        apr_table_unset(r->headers_out, "Content-Length");
-        apr_table_unset(r->err_headers_out, "Content-Length");
-        r->chunked = 1;
-      } else {
-        // adjust the content-length header
-        // TODO: append dummy bytes if we can't inject the data
-        int errh = 0;
-        const char* cl =  apr_table_get(r->headers_out, "Content-Length");
-        if(!cl) {
-          errh = 1;
-          cl =  apr_table_get(r->err_headers_out, "Content-Length");
-        }
-        if(cl) {
-          // adjust non-chunked response
-          char *length;
-          apr_off_t s;
-          char *errp = NULL;
-          if(apr_strtoff(&s, cl, &errp, 10) == APR_SUCCESS) {
-            s = s + strlen(rctx->script) + strlen(rctx->method);
-            length = apr_psprintf(r->pool, "%"APR_OFF_T_FMT, s);
-            if(!errh) {
-              apr_table_set(r->headers_out, "Content-Length", length);
-            } else {
-              apr_table_set(r->err_headers_out, "Content-Length", length);
-            }
-          } else {
-            // fallback to chunked
-            r->chunked = 1;
-            if(!errh) {
-              apr_table_unset(r->headers_out, "Content-Length");
-            } else {
-              apr_table_unset(r->err_headers_out, "Content-Length");
-            }
-          }
-        }
-      }
+      
       apr_table_add(r->headers_out, "Cache-Control", "no-cache, no-store");
       apr_table_unset(r->headers_out, "Etag");
-      rctx->state = CSRF_RES_SEARCH_HEAD;
-      rctx->search = apr_pstrdup(r->pool, "</head>");
+      if (rctx->type == CSRF_TYPE_HTML) {
+        rctx->state = CSRF_RES_SEARCH_HEAD;
+        rctx->search = apr_pstrdup(r->pool, "</head>");
+      } else if (rctx->type == CSRF_TYPE_XML) {
+        rctx->state = CSRF_RES_SEARCH_TOKEN;
+        rctx->search = apr_pstrdup(r->pool, CSRF_TOKEN_TAG);
+      }
     }
   }
 
   // start searching within this brigade...
-  if(rctx->search) {
+  if(!csrf_ignore_req(r) && !rctx->done && rctx->search) {
     apr_bucket *b;
     int loop = 0;
     /* pool to allocate buckets from (used to insert buffer from previous loop)
@@ -901,7 +964,7 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
             /*
              * 1. overlap with existing buffer
              */
-            if(CSRF_ENABLE_WINDOW && rctx->body_window[0]) {
+            if(rctx->type == CSRF_TYPE_HTML/*CSRF_ENABLE_WINDOW*/ && rctx->body_window[0]) {
               int blen = nbytes > CSRF_WIN ? CSRF_WIN : nbytes-1;
               int wlen = strlen(rctx->body_window); // lenght of the previous buffer
               apr_bucket *last;
@@ -934,11 +997,13 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
                     csrf_inject_head(r, bb, last, rctx, rctx->body_window, sz);
                   } else if(rctx->state == CSRF_RES_SEARCH_BODY) {
                     csrf_inject_body(r, bb, last, rctx, rctx->body_window, sz);
+                  } else if(rctx->state == CSRF_RES_SEARCH_TOKEN) {
+                    if (!rctx->done) csrf_inject_token(r, bb, last, rctx, rctx->body_window, sz);
                   }
                 } else {
                   // in window but not within the previously stored data ("2. new buffer" will detect it)
                 }
-              }
+              } else if (rctx->type == CSRF_TYPE_XML) break;
               rctx->body_window[0] = '\0';
             }
 
@@ -963,10 +1028,14 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
                 } else if(rctx->state == CSRF_RES_SEARCH_BODY) {
                   b = csrf_inject_body(r, bb, b, rctx, buf, sz);
                   break;
+                } else if(rctx->state == CSRF_RES_SEARCH_TOKEN) {
+                  if (!rctx->done) b = csrf_inject_token(r, bb, b, rctx, buf, sz);
+                  break;
                 }
-              }
+              } else if (rctx->type == CSRF_TYPE_XML) break;
             }
 
+		
             /*
              * 3. end parsing if we are done
              */
@@ -977,7 +1046,7 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
             /*
              * 4. store the end (for next loop)
              */
-            if(CSRF_ENABLE_WINDOW && rctx->state != CSRF_RES_SEARCH_END) {
+            if(rctx->type == CSRF_TYPE_HTML/*CSRF_ENABLE_WINDOW*/ && rctx->state != CSRF_RES_SEARCH_END) {
               apr_bucket *rb;
               int blen = nbytes > CSRF_WIN ? CSRF_WIN : nbytes-1;
               strncpy(rctx->body_window, &buf[nbytes - blen], blen);
@@ -991,13 +1060,87 @@ static apr_status_t csrf_out_filter_body(ap_filter_t *f, apr_bucket_brigade *bb)
       }
       loop++;
     }
+    
     if(rctx->pool) {
       // this data is no longer needed
       apr_pool_destroy(rctx->pool);
     }
     rctx->pool = pool; // store pool (until the buckets are sent)
   }
+  
+  
+  if (rctx->type!=CSRF_TYPE_OTHER) {
+    if(CSRF_CHUNKED_ONLY) {
+        // send as chunked response
+        apr_table_unset(r->headers_out, "Content-Length");
+        apr_table_unset(r->err_headers_out, "Content-Length");
+        r->chunked = 1;
+    } else {
+      // adjust the content-length header
+      // TODO: append dummy bytes if we can't inject the data
+      int errh = 0;
+      const char* cl =  apr_table_get(r->headers_out, "Content-Length");
+      if(!cl) {
+        errh = 1;
+        cl =  apr_table_get(r->err_headers_out, "Content-Length");
+      }
+      if(cl) {
+        // adjust non-chunked response
+        char *length;
+        apr_off_t s;
+        char *errp = NULL;
+        if(apr_strtoff(&s, cl, &errp, 10) == APR_SUCCESS) {
+          s += rctx->len;
+          length = apr_psprintf(r->pool, "%"APR_OFF_T_FMT, s);
+          if(!errh) {
+            apr_table_set(r->headers_out, "Content-Length", length);
+          } else {
+            apr_table_set(r->err_headers_out, "Content-Length", length);
+          }
+        } else {
+          // fallback to chunked
+          r->chunked = 1;
+          if(!errh) {
+            apr_table_unset(r->headers_out, "Content-Length");
+          } else {
+            apr_table_unset(r->err_headers_out, "Content-Length");
+          }
+        }
+      }
+    }
+  }
   return ap_pass_brigade(f->next, bb);
+}
+
+
+static void csrf_fixup_parps_mess(request_rec * r) {
+  static const char *PROGS4GL[] = { "dwsrun", "dwsrun_c", "mfxmlrun", NULL };
+  int i;
+  int alen;
+  int found;
+  int ulen;
+  char *s;
+  
+  if (r->args) { 
+    ulen = strlen(r->uri);
+    found = 0;
+    for (i = 0; PROGS4GL[i]; i++) {
+      if ((s = strstr(r->uri, PROGS4GL[i])) && ulen - (s - r->uri) == strlen(PROGS4GL[i])) {
+        found = 1;
+        break;
+      }
+    }
+      
+    if (found) {
+      alen = strlen(r->args);
+      for (i = 0; i < alen - 1; i++) {
+        if (r->args[i] == '=') {
+          if (r->args[i + 1] == '&') memmove(r->args + i, r->args + i + 1, alen - i);
+          break;
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -1010,40 +1153,51 @@ static int csrf_fixup(request_rec * r) {
   if(ap_is_initial_req(r) && csrf_enabled(r)) {
     ap_add_output_filter("csrf_out_filter_body", NULL, r, r->connection);
     if(!csrf_ignore_req(r)) {
-      csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
-      apr_table_t *tl = NULL;
-      char *msg = NULL;
-      const char *idheader = apr_table_get(r->headers_in, sconf->id);
       if(csrf_parp_hp_table_fn) {
-        tl = csrf_parp_hp_table_fn(r);
+        /*ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r, "BEFORE = %s", r->args);*/
+        csrf_fixup_parps_mess(r);
+        /*ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r, "AFTER = %s", r->args);*/
+        ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r, "Referer: %s", apr_table_get(r->headers_in, "Referer"));
       }
-      if(tl == NULL) {
-        // parp was not active/loaded, we read the request query ourself
-        tl = csrf_get_query(r);
-      }
-      // id may be transmitted by header or query
-      if(tl == NULL && idheader == NULL) {
-        /* no request query/body 
-         * => nothing to do here since we don't validate "simple" 
-         *    requests without any parameters */
+      
+      if (csrf_ignore_validation(r)) {
         return DECLINED;
-      }
-      if(!csrf_validate_req_id(r, tl, idheader, &msg)) {
-        ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r,
-                      CSRF_LOG_PFX(020)"request denied, %s, action=%s, id=%s", msg ? msg : "-",
-                      sconf->action == CSRF_ACTION_LOG ? "log" : "deny",
-                      csrf_get_uniqueid(r));
-        if(sconf->action != CSRF_ACTION_LOG) {
-          return HTTP_FORBIDDEN;
+      } else {
+        csrf_srv_config_t *sconf = ap_get_module_config(r->server->module_config, &csrf_module);
+        apr_table_t *tl = NULL;
+        char *msg = NULL;
+        const char *idheader = apr_table_get(r->headers_in, sconf->id);
+        if(csrf_parp_hp_table_fn) {
+          tl = csrf_parp_hp_table_fn(r);
         }
-      }
-      if(!csrf_referer_check(r)) {
-        ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r,
-                      CSRF_LOG_PFX(021)"request denied, %s, action=%s, id=%s", msg ? msg : "-",
-                      sconf->action == CSRF_ACTION_LOG ? "log" : "deny",
-                      csrf_get_uniqueid(r));
-        if(sconf->action != CSRF_ACTION_LOG) {
-          return HTTP_FORBIDDEN;
+        if(tl == NULL) {
+          // parp was not active/loaded, we read the request query ourself
+          tl = csrf_get_query(r);
+        }
+        // id may be transmitted by header or query
+        if(tl == NULL && idheader == NULL) {
+          /* no request query/body 
+           * => nothing to do here since we don't validate "simple" 
+           *    requests without any parameters */
+          return DECLINED;
+        }
+        if(!csrf_validate_req_id(r, tl, idheader, &msg)) {
+          ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r,
+                        CSRF_LOG_PFX(020)"request denied, %s, action=%s, id=%s", msg ? msg : "-",
+                        sconf->action == CSRF_ACTION_LOG ? "log" : "deny",
+                        csrf_get_uniqueid(r));
+          if(sconf->action != CSRF_ACTION_LOG) {
+            return HTTP_FORBIDDEN;
+          }
+        }
+        if(!csrf_referer_check(r)) {
+          ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r,
+                        CSRF_LOG_PFX(021)"request denied, %s, action=%s, id=%s", msg ? msg : "-",
+                        sconf->action == CSRF_ACTION_LOG ? "log" : "deny",
+                        csrf_get_uniqueid(r));
+          if(sconf->action != CSRF_ACTION_LOG) {
+            return HTTP_FORBIDDEN;
+          }
         }
       }
     }
@@ -1089,6 +1243,7 @@ static int csrf_post_config(apr_pool_t *pconf, apr_pool_t *plog,
   if(ap_find_linked_module("mod_parp.c") == NULL) {
     ap_log_error(APLOG_MARK, APLOG_WARNING, 0, bs, 
                  CSRF_LOG_PFX(001)"mod_parp not available");
+
     csrf_parp_hp_table_fn = NULL;
   } else {
     csrf_parp_hp_table_fn = APR_RETRIEVE_OPTIONAL_FN(parp_hp_table);
@@ -1137,6 +1292,7 @@ static void *csrf_dir_config_merge(apr_pool_t *p, void *basev, void *addv) {
 static void *csrf_srv_config_create(apr_pool_t *p, server_rec *s) {
   csrf_srv_config_t *sconf = apr_pcalloc(p, sizeof(csrf_srv_config_t));
   sconf->ignore_pattern = ap_pregcomp(p, CSRF_IGNORE_PATTERN, AP_REG_ICASE);
+  sconf->ignore_validation_pattern = ap_pregcomp(p, CSRF_IGNORE_VALIDATION_PATTERN, AP_REG_ICASE);
   sconf->id = apr_pstrdup(p, CSRF_QUERYID);
   sconf->enabled = -1;
   sconf->path2script = apr_pstrdup(p, CSRF_DEFAULT_PATH);
