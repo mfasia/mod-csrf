@@ -2,7 +2,7 @@
 ### Modified from http://mod-csrf.sourceforge.net/ for handling XML content type and controlling CSRF token validation
 ---
 ## How to install dependencies (mod_parp)
-```sh
+```bash
 # wget http://downloads.sourceforge.net/project/parp/mod_parp-0.15-src.tar.gz
 # tar -zxvf tar -zxvf mod_parp-0.15-src.tar.gz
 # cd cd mod_parp-0.15/apache2/
@@ -22,6 +22,9 @@
 # cp ../../../test/htdocs/csrf.js /var/www/
 # systemctl restart httpd
 ```
+
+## How to insert CSRF token in XML response
+### In any XML document add an empty tag </csrf_token> then the module will fill in this tag with CSRF token
 
 ## Example Apache configuration (/etc/httpd/conf.modules.d/11-csrf.conf)
 ```xml
