@@ -111,11 +111,13 @@ function addToNodes(paramName, csrfId) {
 
 // adds the csrfId as a hidden field to every form
 function addToForms(paramName, csrfId) {
-  var nodes = document.getElementsByTagName('form');
+  //var nodes = document.getElementsByTagName('form');
+  var nodes = document.forms;
   for(var i = 0; i < nodes.length; i++) {
     var link = document.createElement('input');
     link.setAttribute('type', 'hidden');
     link.setAttribute('name', paramName);
+    link.setAttribute('id', paramName);
     link.setAttribute('value', csrfId);
     nodes[i].appendChild(link);
   }
