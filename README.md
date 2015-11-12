@@ -1,33 +1,59 @@
-## mod_csrf: Apache2 module for Cross-Site Request Forgery (CSRF) prevention
-### Modified from http://mod-csrf.sourceforge.net/ for handling XML content type and controlling CSRF token validation
----
-## How to install dependencies (mod_parp)
-```bash
-# wget http://downloads.sourceforge.net/project/parp/mod_parp-0.15-src.tar.gz
-# tar -zxvf tar -zxvf mod_parp-0.15-src.tar.gz
-# cd cd mod_parp-0.15/apache2/
-# apxs -i -c mod_parp.c
-# cp -p /etc/httpd/conf.modules.d/00-base.conf /etc/httpd/conf.modules.d/00-base.conf.bak
-# echo "LoadModule parp_module modules/mod_parp.so" >> /etc/httpd/conf.modules.d/00-base.conf
-# systemctl restart httpd
+# Overview
+mod_csrf - Cross-site request forgery protection module for the Apache web server.
+Cloned from: http://mod-csrf.sourceforge.net/
+
+Modified for handling XML content type and controlling CSRF token validation.
+
+# License
+```
+Copyright (C) 2012-2014 Christoph Steigmeier, Pascal Buchbinder
+
+This library is free software; you can redistribute it and/or
+modify it under the terms of the GNU Lesser General Public
+License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version.
+
+This library is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public
+License along with this library; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+
+Please refer to ./doc/index.html for further information.
 ```
 
-## How to install
-```sh
-# wget https://github.com/mfasia/mod-csrf/archive/master.zip
-# unzip master.zip
-# cd mod-csrf-master/httpd_src/modules/csrf/
-# apxs -i -c mod_csrf.c -lcrypto
-# echo "LoadModule parp_module modules/mod_csrf.so" >> /etc/httpd/conf.modules.d/00-base.conf
-# cp ../../../test/htdocs/csrf.js /var/www/
-# systemctl restart httpd
-```
+# Dependencies
+[mod_parp](https://github.com/mfasia/mod-parp) - A POST/GET parameter parser to enable apache modules to validate form parameter send from client.
 
-## How to insert CSRF token in XML response
-### In any XML document add an empty tag ```<csrf_token></csrf_token>``` then the module will fill in this tag with CSRF token
+# Building
+1. Update version number `g_revision` in: `httpd_src/modules/csrf/mod_csrf.c`
+2. Update release notes: `doc/CHANGES.txt`
+3. Update doc: `doc/index.html`
+4. Update release number `Release:` in: `httpd_src/modules/csrf/mod_csrf.spec`
+5. Commit last changes
+6. Run `sh package.sh`
+7. Run `rpmbuild -ta mod_csrf-${version}.tar.gz`
 
-## Example Apache configuration (/etc/httpd/conf.modules.d/11-csrf.conf)
+# Distributing
+- Upload `mod_csrf-${version}-${release}.x86_64.rpm` to http://repo1.metafour.com/yumrepo/centos/7/extras/RPMS/x86_64/
+- Upload `mod_csrf-${version}-${release}.src.rpm` to http://repo1.metafour.com/yumrepo/centos/7/extras/SRPMS/
+
+# Usage
+1.  Copy `/usr/share/doc/mod_csrf-${version}/csrf.js` to DocumentRoot (e.g. `/var/www/html`)
+2.  Configure Apache (e.g. `/etc/httpd/conf.modules.d/11-csrf.conf`)
 ```xml
+# Load and configure the PARP module
+LoadModule parp_module modules/mod_parp.so
+<IfModule mod_parp.c>
+  # Ignore parser errors:
+  PARP_ExitOnError         200
+</IfModule>
+
+# Load and configure the CSRF module
+LoadModule csrf_module modules/mod_csrf.so
 SetEnvIf Request_URI /* CSRF_IGNORE=yes
 SetEnvIf X-Forwarded-For (.*) CSRF_ATTRIBUTE=$1
 # SetEnvIf Request_Method GET CSRF_IGNORE_VALIDATION=yes
@@ -36,8 +62,9 @@ SetEnvIf X-Forwarded-For (.*) CSRF_ATTRIBUTE=$1
 #  CSRF_ScriptPath /csrf.js
 #</IfModule>
 #SetEnvIf   Request_URI   .*dwsrun.*    !parp
-
-<IfModule mod_parp.c>
-        PARP_ExitOnError         200
-</IfModule>
 ```
+3. To insert CSRF token in any XML response add an empty tag in the XML document.
+```xml
+<csrf_token></csrf_token>
+```
+
