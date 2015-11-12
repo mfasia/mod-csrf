@@ -54,6 +54,13 @@ echo "install source"
 cp httpd_src/modules/csrf/mod_csrf.c mod_csrf-${VERSION}/apache2/
 cp httpd_src/modules/csrf/config.m4 mod_csrf-${VERSION}/apache2/
 cp httpd_src/modules/csrf/Makefile.in mod_csrf-${VERSION}/apache2/
+cp httpd_src/modules/csrf/Makefile mod_csrf-${VERSION}/apache2/
+cp httpd_src/modules/csrf/modules.mk mod_csrf-${VERSION}/apache2/
+cp httpd_src/modules/csrf/.deps mod_csrf-${VERSION}/apache2/
+
+echo "install spec file"
+sed <httpd_src/modules/csrf/mod_csrf.spec >mod_csrf-${VERSION}/mod_csrf-${VERSION}.spec \
+ -e "s/0\.00/${VERSION}/g"
 
 echo "package: mod_csrf-${VERSION}.tar.gz"
 tar cf mod_csrf-${VERSION}.tar --owner root --group bin mod_csrf-${VERSION}

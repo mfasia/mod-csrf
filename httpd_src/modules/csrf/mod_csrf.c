@@ -25,7 +25,7 @@
 /************************************************************************
  * Version
  ***********************************************************************/
-static const char g_revision[] = "0.5";
+static const char g_revision[] = "0.5.1";
 
 
 #define MYLOG(x) ap_log_rerror(APLOG_MARK, APLOG_NOERRNO|APLOG_ERR, 0, r, x);

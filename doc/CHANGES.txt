@@ -1,3 +1,7 @@
+Version 0.5.1
+
+ - Modified for handling XML content type and controlling CSRF token validation
+
 Version 0.5
 
  - Fix CSRF_Enable per location configuration.
